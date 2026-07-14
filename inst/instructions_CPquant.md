@@ -1,0 +1,122 @@
+
+# CPquant
+  
+If you are using CPxplorer, please cite our paper:  
+Beloki Ezker et al. Streamlining Quantification and Data Harmonization of Polychlorinated Alkanes Using a Platform-Independent Workflow. Environ. Sci. Technol. 2025, doi/10.1021/acs.est.5c04928.  
+  
+
+## Introduction    
+CPquant uses the deconvolution process proposed by Bogdal et al (Anal Chem, doi/10.1021/ac504444d) to estimate 
+the relative composition needed from different standards to match the measured homologue pattern of samples. 
+The underlying calculations are based on the CPCrawler R script by Perkons et al (Food Chem, doi/10.1016/j.foodchem.2019.125100).
+In CPquant, the deconvolution is performed using the nnls package (https://cran.r-project.org/web/packages/nnls).  
+
+- CPquant quantification works with both single chain and mixture standards.  
+- We recommend to use 5 calibration levels for each standard. These needs to be named in the `Batch Name` column and their concentration levels `Analyte Concentration` added according to below instructions from the input file which is exported from Skyline.  
+- If recovery needs to be calculated, then a _Quality Control_ sample needs to be added.
+
+__The calculated concentrations are for those in the extract. The user can then export the results to excel and perform additional calculations to derive the concentrations in the samples__
+  
+  
+## Input file  
+The input excel file should be exported from the Skyline results table. It should include the following column with the names:  
+`Replicate Name`: sample name  
+`Sample Type`: the following characters can be used, _Unknown_ (which is the sample to be quantified), _Blank_ (field blanks and procedural blanks are not distinguished), _Standard_ (standard used for quantification), _Quality Control_ (standard/sample used to determine the recovery).  
+`Batch Name`: Input for Standard only (leave blank for Unknown and Blank). This will determine which standards that belongs to a calibration series as well as which carbon chain groups 
+to quantify with the standard.  
+The naming of the Batch Name should be: CarbonGroups_StandardName. An underscore is a separator for the carbon chain group and standard name.  
+Example A: C10-C13_StandardA. This standard will then be used to quantify carbon chains C10, C12, C13 (the hyphen specify the range of carbon chains). 
+This belongs to the StandardA which can be at different Analyte Concentration for the same calibration series. These can be inserted in the Document Grid in Skyline.  
+
+Example B: C14_52%Cl. This standard will only be used to quantify C14 carbon chains. It specifies 52% chlorine content (although this information is not needed for quantification).  
+__ISSUE:__ quantification currently only work if the `Batch Name` covers all carbon groups that are in the transition list. For example, if the transition list covers C10 to C30 carbons, and any of the standards do not cover C30, then CPquant will fail. This will be fixed later.  
+
+`Molecule List`: compounds used internal standards are denoted `IS`, recovery standards as `RS` (also called volumetric standard).  
+`Molecule`: PCA homologue group.  
+`Area`: integrated area from Skyline.  
+`Analyte Concentration`: For standards only. This is the standard concentrations/amounts. 
+This column could be in concentration or weight/amount unit depending on the user input. It will affect the final quantification unit.  
+`Mass Error PPM`: might be exported from Skyline but currently not used by CPquant.  
+`Isotope Label Type`: Quan or Qual.  
+`Chromatogram Precursor M/Z`: the m/z values of the ion (not used by CPquant).  
+`Sample Dilution Factor`: indicate the dilution (>1) or concentration factor (<1). Default from Skyline is 1 (no dilution).  
+`Transition Note`: internal information transferred from CPions used for calculating the correct isotope ratio.  
+`Transition Note` can include [INTERFERENCE] if the ion was flagged during CPions Skyline export.  
+  
+## Quantification Inputs tab  
+__Import excel file from Skyline__: This is the excel file from the Report export function of Skyline.  
+__Concentration unit__: an optional input to indicate the concentration (or amount) unit of the Analyte Concentration (e.g. ng/mL or ng).   
+After loading the excel, allow for the Area plot to show up before pressing the "Proceed" button, otherwise error will occur.  
+
+After loading the data, the user can choose the options:  
+__Choose ion for quantification__: "Quan only" only uses the signal from quantification ion, and "Sum Quan+Qual" use the sum of the Quan and all Qual ions for quantification.  
+The Quan ion depends on the Skyline strategy selected in CPions, such as highest abundance or least interference.  
+__Subtraction by blank?__: If "Yes, by avg area of blanks", then the area for each Molecule will be subtracted with the average area of all blank samples.  
+__Correct with RS area?__: If "Yes", then the area of each Molecule will the normalized to the recovery standard (RS) area for each sample.  
+ISSUE: currently it is not possible to choose different RS and CPquant keeps choosing the first variable even if the user select another. The user should use only one RS until this issue is fixed.  
+
+__Calculate recovery?__: If "Yes", requires samples with the `Sample Type` designated as "Quality Control" that include the spiked concentrations of 
+IS and RS corresponding amounts/concentrations. If multiple IS and/or RS are present, then calculation will be made from combination of these ratios shown in the final table.  
+
+__Calculate MDL?__: If "Yes", then calculates the method detection limits based on blank samples.  
+If no blank subtraction then MDL = avg + 3 * standard deviation of blank samples.  
+If blank subtraction then MDL = 3 * standard deviation of blank samples.  
+__Types of standards__: Currently only have option to use mixtures and single chain standards to perform deconvolution. More option can be added later for other quantification strategies.  
+  
+  
+__Remove samples from quantification?__: select samples to be removed before quantification process.  
+__Keep the the calibration curves above this rsquared__: remove calibration curves for every homologue group in each standard below this R2 value (goodness of calibration fit). 
+This will remove all homologue groups that do not show linearity within the standard calibration levels, thus remove their contribution to the deconvolution. 
+Default is 0.8 but can be changed accordingly by the user.  
+  
+__Proceed__: pressing this button will quantify the samples based on the deconvolution process and the results will show up in the different tabs.  
+  
+
+### Quantification process  
+The process starts by creating calibration curves for each carbon chain group for each standard mixture. 
+The Batch Name in the excel file determines which carbon chain group to be included for each standard mixture. A linear regression will be fitted and the slope is used as the response factor (RF).
+If the R-squared of the goodness of calibration fit for a homologue group for a standard series (calibration curve) is below the user input threshold (modified in the first tab), then the homologue group in that standard is not considered for subsequent quantification.  
+
+
+
+## Input summary    
+### Choose tab  
+The display might take some time before results show up here so be patient.  
+__Included Standards__: A table showing standards and homologue groups that are included in the quantification. Only those with a positive RF and rsquared above the initial cutoff will be included.  
+__Removed from Calibration__: A table showing individual homologue groups from specific standards that are removed from the quantification process, due to negative RF or calibration curve R2 values below limit.   
+__Quan to Qual ratio__: Violin plots showing the ratio Quan/Qual area to detect outliers and thus help in assessing quality of data.  
+__Measured vs Theor Quan/Qual ratio__: Plot showing the measured Quan/Qual ratio divided by the theoretical Quan/Qual ratio. Ideally, the ratio should be around 1. Outlier ratios (<0.3 or >3) are marked in red.  
+  
+  
+## Quantification summary  
+__Export all results to Excel__: export all results from the quantification to an excel file with different sheets.  
+__Quantification table__: this shows the quantification results directly in a table. The unit of the quantification depends on the design of concentration or weight amount specified by the user.  
+
+## Standard contributions  
+This plot shows how much each standard contributes to the reconstructed homologue group pattern.  
+  
+  
+## Homologue Group Patterns  
+  
+Plots the relative distribution (relative area) of the samples.  
+__All Samples Overview__: gives a quick overview on homologue group patterns of all samples in a static plot.  
+__Samples Overlay__: overlays all selected samples in one plot.  
+__Samples Panels__: plots one panel for each selected sample. Also compares the relative distribution of homologue groups of the sample with the reconstructed pattern 
+by the deconvolution process (as lines in the Deconvoluted Distribution legend group).  
+
+__ISSUE__: CURRENTLY THE COLORS OF THE CARBON CHAIN GROUPS DOES NOT MATCH BETWEEN DIFFERENT SAMPLES  
+  
+
+## QA/QC  
+Various QA/QC results will show depending on the choices in the input tab. These include recovery and MDL calculations.  
+
+The isotope-pattern QC views compare normalized observed Skyline peak areas with the theoretical relative abundances exported by CPions in the `Transition Note` column. The summary table reports the number of observed and expected ions, total area, cosine similarity, Pearson correlation, weighted absolute percent error, maximum ion ratio error, and a QC flag. A cosine similarity of 1 means the measured isotope pattern matches the theoretical pattern exactly after normalization. By default, cosine similarity >=0.95 is flagged as _Pass_, 0.85-0.95 as _Review_, and <0.85 as _Fail_.  
+
+The isotope QC plots include an observed/theoretical pattern overlay for one molecule and sample, a heatmap of cosine similarity across samples and molecules, and observed/theoretical ion-ratio residuals where ratios >3 or <0.3 are highlighted as outliers.  
+  
+
+
+
+
+
+

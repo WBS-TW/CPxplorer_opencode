@@ -1,0 +1,733 @@
+
+
+
+# Various utilities and helper functions for CPquant
+
+#-------------------------------
+parse_transition_rel_ab <- function(transition_note) {
+    matches <- stringr::str_match(transition_note, "\\{[^}]*\\}\\{([^}]*)\\}")
+    as.numeric(matches[, 2])
+}
+
+#-------------------------------
+normalize_cpquant_skyline <- function(df, standard_types = "Group Mixtures") {
+    df <- df |>
+        #make sure to update any_of() if Skyline changes the variable names in future versions
+        dplyr::rename(Replicate_Name = tidyr::any_of(c("Replicate Name", "ReplicateName", "Replicate"))) |>
+        dplyr::rename(Sample_Type = tidyr::any_of(c("Sample Type", "SampleType"))) |>
+        dplyr::rename(Molecule_List = tidyr::any_of(c("Molecule List", "MoleculeList"))) |>
+        dplyr::rename(Mass_Error_PPM = tidyr::any_of(c("Mass Error PPM", "MassErrorPPM"))) |>
+        dplyr::rename(Isotope_Label_Type = tidyr::any_of(c("Isotope Label Type", "IsotopeLabelType"))) |>
+        dplyr::rename(Chromatogram_Precursor_MZ = tidyr::any_of(c("Chromatogram Precursor M/Z", "ChromatogramPrecursorMz"))) |>
+        dplyr::rename(Analyte_Concentration = tidyr::any_of(c("Analyte Concentration", "AnalyteConcentration"))) |>
+        dplyr::rename(Batch_Name = tidyr::any_of(c("Batch Name", "BatchName"))) |>
+        dplyr::rename(Transition_Note = tidyr::any_of(c("Transition Note", "TransitionNote"))) |>
+        dplyr::rename(Sample_Dilution_Factor = tidyr::any_of(c("Sample Dilution Factor", "SampleDilutionFactor"))) |>
+        dplyr::mutate(
+            Analyte_Concentration = as.numeric(Analyte_Concentration),
+            Area = as.numeric(Area),
+            Area = tidyr::replace_na(Area, 0),
+            C_homologue = stringr::str_extract(Molecule, "C\\d+"),
+            Cl_homologue = stringr::str_extract(Molecule, "Cl\\d+"),
+            C_number = as.numeric(stringr::str_extract(C_homologue, "\\d+")),
+            Cl_number = as.numeric(stringr::str_extract(Cl_homologue, "\\d+")),
+            PCA = stringr::str_c(C_homologue, Cl_homologue, sep = ""),
+            Rel_Ab = parse_transition_rel_ab(Transition_Note)
+        )
+
+    if (identical(standard_types, "Group Mixtures")) {
+        df <- df |>
+            dplyr::mutate(Quantification_Group = stringr::str_extract(Batch_Name, "^[^_]+"))
+    }
+
+    df
+}
+
+#-------------------------------
+read_cpquant_skyline <- function(path, standard_types = "Group Mixtures") {
+    readxl::read_excel(
+        path,
+        guess_max = 5000,
+        na = c("", "NA", "#N/A", "N/A")
+    ) |>
+        normalize_cpquant_skyline(standard_types = standard_types)
+}
+
+# =========================================================
+# Helper UI builders
+# =========================================================
+
+
+#-------------------------------
+defineVariablesUI <- function(df_for_choices) {
+    rep_names <- df_for_choices$Replicate_Name
+    rep_names <- unique(stats::na.omit(rep_names))
+    rep_names <- rep_names[order(rep_names)]
+
+    shiny::fluidRow(
+        shiny::column(
+            6,
+            shiny::selectInput(
+                inputId = "removeSamples", # select samples to remove from quantification
+                label   = "Remove samples from quantification?",
+                choices = rep_names,
+                selected = NULL,
+                multiple = TRUE
+            )
+        ),
+
+        shiny::tags$br(), shiny::tags$br(), shiny::tags$br(), shiny::tags$br(),
+
+        shiny::column(
+            6,
+            shiny::sliderInput(
+                inputId = "removeRsquared", # keep only Molecule from standard calibration curves above this R^2
+                label   = "Keep the calibration curves above this R-squared (0 means keep everything)",
+                min     = 0,
+                max     = 1,
+                value   = 0.90,
+                step    = 0.05
+            )
+            # shiny::checkboxInput(
+            #   inputId = "zerointercept", # force y-intercept through zero
+            #   label   = "Set intercept to zero",
+            #   value   = FALSE
+            # )
+        )
+    )
+}
+
+#-------------------------------
+defineCorrectionUI <- function(df_for_choices) {
+    # Extract RS molecules for selection; keep it stable (from base data)
+    rs_choices <- df_for_choices |>
+        dplyr::filter(.data$Molecule_List == "RS") |>
+        dplyr::pull(.data$Molecule) |>
+        unique() |>
+        stats::na.omit() |>
+        as.character()
+
+    rs_choices <- rs_choices[order(rs_choices)]
+
+    shiny::fluidRow(
+        shiny::column(
+            6,
+            shiny::selectInput(
+                inputId = "chooseRS",      # select which will be the RS
+                label   = "Choose RS for correction",
+                choices = rs_choices,
+                selected = if (length(rs_choices)) rs_choices[1] else NULL,
+                multiple = FALSE
+            )
+        )
+    )
+}
+
+# =========================================================
+# Helper plotting functions
+# =========================================================
+
+#-------------------------------
+plot_skyline_output <- function(Skyline_output){
+
+    Skyline_output |>
+        dplyr::filter(Isotope_Label_Type == "Quan") |>
+        dplyr::mutate(OrderedMolecule = factor(Molecule, levels = unique(Molecule[order(C_number, Cl_number)]))) |>
+        plotly::plot_ly(
+            x = ~ OrderedMolecule,
+            y = ~ Area,
+            color = ~ Sample_Type,
+            type = "box",
+            text = ~paste(
+                "Homologue: ", PCA,
+                "<br>Sample: ", Replicate_Name,
+                "<br>Area:", round(Area, 2)
+            ),
+            hoverinfo = "text"
+        ) |>
+        plotly::layout(xaxis = list(title = 'Molecule'),
+                       yaxis = list(title = 'Area'))
+}
+
+#-------------------------------
+make_calibration_table <- function(CPs_standards_input) {
+
+    CPs_standards_input %>%
+        dplyr::ungroup() %>%
+        dplyr::select(
+            Batch_Name,
+            Quantification_Group,
+            Molecule_List,
+            Molecule,
+            C_number,
+            Cl_number,
+            PCA,
+            RF,
+            intercept,
+            cal_rsquared
+        ) %>%
+        dplyr::mutate(
+            RF = as.numeric(RF),
+            intercept = as.numeric(intercept),
+            cal_rsquared = as.numeric(cal_rsquared)
+        ) %>%
+        dplyr::arrange(
+            Batch_Name, Quantification_Group,
+            Molecule_List, Molecule
+        )
+}
+
+
+#-------------------------------
+##currently not used##
+plot_calibration_curves <- function(CPs_standards, quantUnit) {
+    # Unnest the data first
+    CPs_standards_unnested <- CPs_standards |>
+        dplyr::filter(RF > 0) |>
+        tidyr::unnest(data) |>
+        dplyr::mutate(Molecule = factor(Molecule,
+                                        levels = unique(Molecule[order(C_number, Cl_number)])))
+
+    # Get unique Quantification Groups
+    groups <- unique(CPs_standards_unnested$Quantification_Group)
+
+    # Create a list to store individual plots
+    plot_list <- list()
+
+    # Create individual plots for each group
+    for(i in seq_along(groups)) {
+        group_data <- CPs_standards_unnested |>
+            dplyr::filter(Quantification_Group == groups[i])
+
+        plot_list[[i]] <- plotly::plot_ly() |>
+            plotly::add_trace(
+                data = group_data,
+                x = ~Analyte_Concentration,
+                y = ~Area,
+                color = ~PCA,
+                type = 'scatter',
+                mode = 'markers',
+                legendgroup = ~Molecule_List,
+                legendgrouptitle = list(text = ~Molecule_List),
+                showlegend = FALSE,
+                name = ~paste(PCA, "(points)"),
+                text = ~paste(
+                    "Molecule:", Molecule,
+                    "<br>Area:", round(Area, 2),
+                    "<br>Concentration:", round(Analyte_Concentration, 2),
+                    "<br>R2:", round(cal_rsquared, 3)
+                ),
+                hoverinfo = 'text'
+            ) |>
+            plotly::add_trace(
+                data = group_data,
+                x = ~Analyte_Concentration,
+                y = ~RF * Analyte_Concentration + intercept,
+                color = ~PCA,
+                type = 'scatter',
+                mode = 'lines',
+                legendgroup = ~Molecule_List,
+                name = ~PCA,
+                hoverinfo = 'none'
+            )
+    }
+
+    # Calculate layout
+    subplot_cols <- min(length(groups), 2)  # Maximum 2 columns
+    subplot_rows <- ceiling(length(groups) / subplot_cols)
+
+    # Create annotations for titles
+    annotations <- list()
+    for(i in seq_along(groups)) {
+        row <- ceiling(i/subplot_cols)
+        col <- if(i %% subplot_cols == 0) subplot_cols else i %% subplot_cols
+
+        annotations[[i]] <- list(
+            text = groups[i],
+            font = list(size = 14),
+            xref = "paper",
+            yref = "paper",
+            x = (col - 0.5)/subplot_cols,
+            y = 1 - (row - 1)/subplot_rows,
+            xanchor = "center",
+            yanchor = "bottom",
+            showarrow = FALSE
+        )
+    }
+
+    # Combine plots using subplot
+    final_plot <- plotly::subplot(
+        plot_list,
+        nrows = subplot_rows,
+        shareX = FALSE,
+        shareY = FALSE,
+        margin = 0.1
+    ) |>
+        plotly::layout(
+            height = 400 * subplot_rows,
+            showlegend = TRUE,
+            annotations = annotations,
+            margin = list(t = 50, b = 50, l = 50, r = 50),
+            legend = list(
+                groupclick = "togglegroup",
+                tracegroupgap = 10,
+                itemsizing = "constant"
+            ),
+            xaxis = list(title = paste0("Analyte Concentration/Amount (", quantUnit, ")"))
+        )
+
+    return(final_plot)
+}
+
+#-------------------------------
+plot_quanqualratio <- function(Skyline_output_filt) {
+
+    Skyline_output_filt |>
+        dplyr::group_by(Replicate_Name, Molecule) |>
+        dplyr::mutate(Quan_Area = ifelse(Isotope_Label_Type == "Quan", Area, NA)) |>
+        tidyr::fill(Quan_Area, .direction = "downup") |>
+        dplyr::mutate(QuanMZ = ifelse(Isotope_Label_Type == "Quan", Chromatogram_Precursor_MZ, NA)) |>
+        tidyr::fill(QuanMZ, .direction = "downup") |>
+        dplyr::mutate(QuanQualRatio = ifelse(Isotope_Label_Type == "Qual", Quan_Area/Area, 1)) |>
+        tidyr::replace_na(list(QuanQualRatio = 0)) |>
+        dplyr::mutate(QuanQualMZ = paste0(QuanMZ,"/",Chromatogram_Precursor_MZ)) |>
+        dplyr::ungroup() |>
+        dplyr::select(Replicate_Name, Sample_Type, Molecule_List, Molecule, QuanQualMZ, QuanQualRatio) |>
+        plotly::plot_ly(x = ~Replicate_Name, y = ~QuanQualRatio, type = 'violin', color = ~Sample_Type,
+                        text = ~paste("Sample: ", Replicate_Name,
+                                      "<br>Molecule List: ", Molecule_List,
+                                      "<br>Molecule: ", Molecule,
+                                      "<br>Quan/Qual MZ: ", QuanQualMZ,
+                                      "<br>Ratio: ", round(QuanQualRatio, 2)),
+                        hoverinfo = "text") |>
+        plotly::layout(title = 'Quan-to-Qual Ratio',
+                       xaxis = list(title = 'Replicate Name'),
+                       yaxis = list(title = 'Quan-to-Qual Ratio'))
+}
+
+#-------------------------------
+plot_meas_vs_theor_ratio <- function(Skyline_output_filt) {
+
+    Skyline_output_filt |>
+        dplyr::group_by(Replicate_Name, Molecule) |>
+        dplyr::mutate(Quan_Area = ifelse(Isotope_Label_Type == "Quan", Area, NA)) |>
+        tidyr::fill(Quan_Area, .direction = "downup") |>
+        dplyr::mutate(QuanMZ = ifelse(Isotope_Label_Type == "Quan", Chromatogram_Precursor_MZ, NA)) |>
+        tidyr::fill(QuanMZ, .direction = "downup") |>
+        dplyr::mutate(QuanQualRatio = ifelse(Isotope_Label_Type == "Qual", Quan_Area/Area, 1)) |>
+        tidyr::replace_na(list(QuanQualRatio = 0)) |>
+        dplyr::mutate(QuanQualMZ = paste0(QuanMZ,"/",Chromatogram_Precursor_MZ)) |>
+
+        dplyr::mutate(Quan_Rel_Ab = ifelse(Isotope_Label_Type == "Quan", Rel_Ab, NA)) |>
+        tidyr::fill(Quan_Rel_Ab, .direction = "downup") |>
+        dplyr::mutate(QuanQual_Rel_Ab_Ratio = ifelse(Isotope_Label_Type == "Qual", Quan_Rel_Ab/Rel_Ab, 1)) |>
+        tidyr::replace_na(list(QuanQual_Rel_Ab_Ratio = 0)) |>
+        dplyr::ungroup() |>
+        dplyr::mutate(MeasVSTheo = QuanQualRatio/QuanQual_Rel_Ab_Ratio) |>
+        dplyr::mutate(Is_Outlier = MeasVSTheo > 3 | MeasVSTheo < 0.3) |>
+        dplyr::mutate(Is_Outlier = factor(Is_Outlier, levels = c(FALSE, TRUE), labels = c("Within Limit", "Outlier"))) |>
+        dplyr::select(Replicate_Name, Sample_Type, Molecule_List, Molecule, QuanQualMZ, QuanQualRatio, QuanQual_Rel_Ab_Ratio, MeasVSTheo, Is_Outlier) |>
+        plotly::plot_ly(x = ~Replicate_Name, y = ~MeasVSTheo,
+                        type = 'scatter', mode = 'markers',
+                        color = ~Is_Outlier,
+                        colors = c('blue', 'red'),
+                        text = ~paste("Replicate:", Replicate_Name,
+                                      "<br>Homologue Group: ", Molecule,
+                                      "<br>Measured against Theoretical Ratio:", round(MeasVSTheo, 1)),
+                        marker = list(size = 10)) |>
+        layout(title = "Measured/Theoretical ratio >3 or <0.3 are marked in red (ratio of 1 means perfect match",
+               xaxis = list(title = "Sample Name"),
+               yaxis = list(title = "MeasVSTheo"))
+
+}
+
+#-------------------------------
+prepare_isotope_pattern_qc <- function(Skyline_output_filt) {
+
+    ion_qc <- Skyline_output_filt |>
+        dplyr::filter(!Molecule_List %in% c("IS", "RS", "VS")) |>
+        dplyr::group_by(Replicate_Name, Sample_Type, Molecule) |>
+        dplyr::mutate(
+            Observed_Pct = if (sum(Area, na.rm = TRUE) > 0) Area / sum(Area, na.rm = TRUE) * 100 else NA_real_,
+            Theoretical_Pct = if (sum(Rel_Ab, na.rm = TRUE) > 0) Rel_Ab / sum(Rel_Ab, na.rm = TRUE) * 100 else NA_real_,
+            Measured_Theoretical_Ratio = Observed_Pct / Theoretical_Pct,
+            Ion_Label = paste(Isotope_Label_Type, round(Chromatogram_Precursor_MZ, 6), sep = " ")
+        ) |>
+        dplyr::ungroup()
+
+    summary_qc <- ion_qc |>
+        dplyr::group_by(Replicate_Name, Sample_Type, Molecule) |>
+        dplyr::summarise(
+            n_ions_observed = sum(!is.na(Observed_Pct) & Area > 0),
+            n_ions_expected = sum(!is.na(Theoretical_Pct) & Theoretical_Pct > 0),
+            total_area = sum(Area, na.rm = TRUE),
+            cosine_similarity = {
+                observed <- Observed_Pct
+                theoretical <- Theoretical_Pct
+                denom <- sqrt(sum(observed^2, na.rm = TRUE)) * sqrt(sum(theoretical^2, na.rm = TRUE))
+                ifelse(denom > 0, sum(observed * theoretical, na.rm = TRUE) / denom, NA_real_)
+            },
+            pearson_r = ifelse(
+                sum(!is.na(Observed_Pct) & !is.na(Theoretical_Pct)) >= 2,
+                stats::cor(Observed_Pct, Theoretical_Pct, use = "complete.obs", method = "pearson"),
+                NA_real_
+            ),
+            weighted_abs_percent_error = {
+                weights <- Theoretical_Pct / sum(Theoretical_Pct, na.rm = TRUE)
+                sum(abs(Observed_Pct - Theoretical_Pct) * weights, na.rm = TRUE)
+            },
+            max_ion_ratio_error = {
+                ratio_error <- abs(log2(Measured_Theoretical_Ratio))
+                if (any(!is.na(ratio_error))) max(ratio_error, na.rm = TRUE) else NA_real_
+            },
+            .groups = "drop"
+        ) |>
+        dplyr::mutate(
+            max_ion_ratio_error = dplyr::if_else(is.infinite(max_ion_ratio_error), NA_real_, max_ion_ratio_error),
+            qc_flag = dplyr::case_when(
+                is.na(cosine_similarity) ~ "No signal",
+                cosine_similarity >= 0.95 ~ "Pass",
+                cosine_similarity >= 0.85 ~ "Review",
+                TRUE ~ "Fail"
+            )
+        )
+
+    list(ion_qc = ion_qc, summary_qc = summary_qc)
+}
+
+#-------------------------------
+plot_isotope_pattern_overlay <- function(ion_qc, selected_replicate, selected_molecule) {
+
+    plot_data <- ion_qc |>
+        dplyr::filter(Replicate_Name == selected_replicate,
+                      Molecule == selected_molecule) |>
+        dplyr::arrange(Chromatogram_Precursor_MZ)
+
+    shiny::req(nrow(plot_data) > 0)
+
+    plotly::plot_ly(plot_data, x = ~Ion_Label) |>
+        plotly::add_bars(
+            y = ~Observed_Pct,
+            name = "Observed",
+            text = ~paste(
+                "Sample:", Replicate_Name,
+                "<br>Molecule:", Molecule,
+                "<br>m/z:", round(Chromatogram_Precursor_MZ, 6),
+                "<br>Observed (%):", round(Observed_Pct, 2),
+                "<br>Theoretical (%):", round(Theoretical_Pct, 2)
+            ),
+            hoverinfo = "text"
+        ) |>
+        plotly::add_trace(
+            y = ~Theoretical_Pct,
+            name = "Theoretical",
+            type = "scatter",
+            mode = "lines+markers",
+            line = list(color = "black"),
+            marker = list(color = "black")
+        ) |>
+        plotly::layout(
+            title = paste("Observed vs theoretical isotope pattern:", selected_molecule),
+            xaxis = list(title = "Transition", tickangle = 45),
+            yaxis = list(title = "Relative abundance (%)"),
+            barmode = "group"
+        )
+}
+
+#-------------------------------
+plot_isotope_similarity_heatmap <- function(summary_qc) {
+
+    plot_data <- summary_qc |>
+        dplyr::mutate(cosine_similarity = round(cosine_similarity, 3))
+
+    plotly::plot_ly(
+        plot_data,
+        x = ~Replicate_Name,
+        y = ~Molecule,
+        z = ~cosine_similarity,
+        type = "heatmap",
+        colorscale = "Viridis",
+        zmin = 0,
+        zmax = 1,
+        text = ~paste(
+            "Sample:", Replicate_Name,
+            "<br>Molecule:", Molecule,
+            "<br>Cosine similarity:", cosine_similarity,
+            "<br>QC flag:", qc_flag,
+            "<br>Total area:", round(total_area, 0)
+        ),
+        hoverinfo = "text"
+    ) |>
+        plotly::layout(
+            title = "Isotope-pattern similarity to theoretical pattern",
+            xaxis = list(title = "Sample"),
+            yaxis = list(title = "Molecule")
+        )
+}
+
+#-------------------------------
+plot_isotope_ratio_residuals <- function(ion_qc) {
+
+    plot_data <- ion_qc |>
+        dplyr::mutate(
+            Is_Outlier = Measured_Theoretical_Ratio > 3 | Measured_Theoretical_Ratio < 0.3,
+            Is_Outlier = factor(Is_Outlier, levels = c(FALSE, TRUE), labels = c("Within Limit", "Outlier"))
+        )
+
+    plotly::plot_ly(
+        plot_data,
+        x = ~Replicate_Name,
+        y = ~Measured_Theoretical_Ratio,
+        type = "scatter",
+        mode = "markers",
+        color = ~Is_Outlier,
+        colors = c("blue", "red"),
+        text = ~paste(
+            "Sample:", Replicate_Name,
+            "<br>Molecule:", Molecule,
+            "<br>Transition:", Ion_Label,
+            "<br>Observed/Theoretical:", round(Measured_Theoretical_Ratio, 2),
+            "<br>Observed (%):", round(Observed_Pct, 2),
+            "<br>Theoretical (%):", round(Theoretical_Pct, 2)
+        ),
+        hoverinfo = "text"
+    ) |>
+        plotly::layout(
+            title = "Observed/theoretical isotope ion ratios (>3 or <0.3 marked red)",
+            xaxis = list(title = "Sample"),
+            yaxis = list(title = "Observed/Theoretical ratio", type = "log")
+        )
+}
+
+#-------------------------------
+plot_sample_contribution <- function(deconvolution) {
+
+    # How much contribution of each sample to the final deconvoluted homologue group pattern
+    plot_data <- deconvolution |>
+        tidyr::unnest(deconv_coef) |>
+        tidyr::unnest_longer(c(deconv_coef, Batch_Name)) |>
+        dplyr::select(Replicate_Name, Batch_Name, deconv_coef)
+
+    # Create the plotly stacked bar plot
+    plotly::plot_ly(plot_data,
+                    x = ~Replicate_Name,
+                    y = ~deconv_coef,
+                    type = "bar",
+                    color = ~Batch_Name,
+                    colors = "Spectral") |>
+        plotly::layout(
+            title = list(
+                text = "Contributions from standards to deconvoluted homologue pattern",
+                x = 0.5,
+                y = 0.95
+            ),
+            barmode = "stack",
+            xaxis = list(title = "Replicate Name"),
+            yaxis = list(title = "Relative Contribution",
+                         tickformat = ".2%"),
+            showlegend = TRUE,
+            legend = list(title = list(text = "Batch Name"))
+        )
+}
+
+#-------------------------------
+plot_homologue_group_pattern_comparison <- function(Sample_distribution, input_selectedSamples){
+
+    # Filter data for selected samples and reshape data
+    selected_samples <- Sample_distribution |>
+        dplyr::filter(Replicate_Name %in% input_selectedSamples) |>
+        dplyr::mutate(Molecule = factor(Molecule, levels = unique(Molecule[order(C_number, Cl_number)])))
+
+    # Get unique homologue groups for consistent coloring
+    homologue_groups <- unique(selected_samples$C_homologue)
+
+    # Create a list of plots, one for each Replicate_Name
+    plot_list <- selected_samples |>
+        split(selected_samples$Replicate_Name) |>
+        purrr::map(function(df) {
+            # Create base plot
+            p <- plotly::plot_ly()
+
+            # Add bars for each homologue group
+            for(hg in homologue_groups) {
+                df_filtered <- df[df$C_homologue == hg,]
+                p <- p |>
+                    plotly::add_trace(
+                        data = df_filtered,
+                        x = ~Molecule,
+                        y = ~Relative_Area,
+                        name = hg,
+                        legendgroup = hg,
+                        showlegend = (df_filtered$Replicate_Name[1] == input_selectedSamples[1]),
+                        type = 'bar',
+                        opacity = 1
+                    )
+            }
+
+            # Add the black line for resolved_distribution
+            p <- p |>
+                plotly::add_trace(
+                    data = df,
+                    x = ~Molecule,
+                    y = ~resolved_distribution,
+                    name = "Deconvoluted Distribution",
+                    legendgroup = "DeconvDistr",
+                    showlegend = (df$Replicate_Name[1] == input_selectedSamples[1]),
+                    type = 'scatter',
+                    mode = 'lines+markers',
+                    line = list(color = 'black'),
+                    marker = list(color = 'black', size = 6),
+                    opacity = 0.7
+                )
+
+            # Add layout
+            p <- p |>
+                plotly::layout(
+                    xaxis = list(
+                        title = "Homologue",
+                        tickangle = 45
+                    ),
+                    yaxis = list(title = "Value"),
+                    barmode = 'group',
+                    annotations = list(
+                        x = 0.5,
+                        y = 1.1,
+                        text = unique(df$Replicate_Name),
+                        xref = 'paper',
+                        yref = 'paper',
+                        showarrow = FALSE
+                    )
+                )
+
+            return(p)
+        })
+
+    # Combine the plots using subplot
+    plotly::subplot(plot_list,
+                    nrows = ceiling(length(plot_list)/2),
+                    shareX = TRUE,
+                    shareY = TRUE) |>
+        plotly::layout(
+            showlegend = TRUE,
+            hovermode = 'closest',
+            hoverlabel = list(bgcolor = "white"),
+            barmode = 'group'
+        ) |>
+        plotly::config(displayModeBar = TRUE) |>
+        htmlwidgets::onRender("
+      function(el) {
+        var plotDiv = document.getElementById(el.id);
+        plotDiv.on('plotly_legendclick', function(data) {
+          Plotly.restyle(plotDiv, {
+            visible: data.data[data.curveNumber].visible === 'legendonly' ? true : 'legendonly'
+          }, data.fullData.map((trace, i) => i).filter(i =>
+            data.fullData[i].legendgroup === data.fullData[data.curveNumber].legendgroup
+          ));
+          return false;
+        });
+      }
+    ")
+}
+
+# =========================================================
+# Deconvolution function
+# =========================================================
+
+perform_deconvolution <- function(df, combined_standard, CPs_standards_sum_RF,
+                                  sample_name = NA_character_) {
+
+    df_matrix <- as.matrix(df)
+
+    message(paste("df_matrix dimensions:", paste(dim(df_matrix), collapse = " x ")))
+    message(paste("combined_standard dimensions:", paste(dim(combined_standard), collapse = " x ")))
+
+    # For messages
+    sample_label <- if (is.na(sample_name)) "<unknown sample>" else sample_name
+
+    # Build df_vector
+    if (ncol(df_matrix) == 1) {
+        df_vector <- as.vector(df_matrix)
+
+    } else {
+
+        if (!"Relative_Area" %in% colnames(df_matrix)) {
+            stop(sprintf(
+                paste0(
+                    "Deconvolution input error for sample '%s':\n",
+                    "Column 'Relative_Area' not found in data passed to perform_deconvolution().\n",
+                    "This usually means that the Relative_Area column was not created correctly ",
+                    "before deconvolution (check that Isotope_Label_Type == 'Quan' exists and Area is numeric)."
+                ),
+                sample_label
+            ))
+        }
+
+        df_vector <- df_matrix[, "Relative_Area", drop = TRUE]
+    }
+
+    # Dimension compatibility: rows (molecules) of combined_standard must match length of df_vector
+    if (nrow(combined_standard) != length(df_vector)) {
+        stop(sprintf(
+            paste0(
+                "Deconvolution failed for sample '%s': incompatible pattern dimensions.\n\n",
+                "  • Length of sample relative pattern = %d\n",
+                "  • Number of molecules in standards matrix = %d\n\n",
+                "This usually means that the set of homologues (Molecule) in the samples\n",
+                "does not match the homologues in the standards.\n",
+                "Check that:\n",
+                "  - Your Skyline export contains the same homologue groups in standards and samples, and\n",
+                "  - You might have removed Molecules in Skyline that were in the original transition list."
+            ),
+            sample_label, length(df_vector), nrow(combined_standard)
+        ))
+    }
+
+    # Validate inputs for nnls
+    if (any(!is.finite(df_vector))) {
+        stop(sprintf(
+            "Deconvolution input error for sample '%s': df_vector contains NA / NaN / Inf values.",
+            sample_label
+        ))
+    }
+    if (any(!is.finite(combined_standard))) {
+        stop(
+            "Deconvolution input error: 'combined_standard' matrix contains NA / NaN / Inf values."
+        )
+    }
+
+    # ---- existing nnls and output code stays the same ----
+    deconv <- nnls::nnls(combined_standard, df_vector)
+
+    deconv_coef <- deconv$x
+    if (sum(deconv_coef) > 0) {
+        deconv_coef <- deconv_coef / sum(deconv_coef)
+    } else {
+        deconv_coef[] <- 0
+    }
+
+    deconv_resolved <- as.vector(combined_standard %*% deconv_coef)
+    names(deconv_resolved) <- rownames(combined_standard)
+
+    sum_deconv_RF <- as.numeric(as.matrix(CPs_standards_sum_RF) %*% deconv_coef)
+
+    sst <- sum((df_vector - mean(df_vector))^2)
+
+    pred_norm_den <- sum(deconv_resolved)
+    pred_norm <- if (is.finite(pred_norm_den) && pred_norm_den > 0) {
+        deconv_resolved / pred_norm_den
+    } else {
+        rep(0, length(deconv_resolved))
+    }
+
+    ssr <- sum((df_vector - pred_norm)^2)
+    deconv_rsquared <- if (sst > 0) 1 - (ssr / sst) else NA_real_
+
+    names(deconv_coef) <- colnames(combined_standard)
+
+    list(
+        sum_deconv_RF   = sum_deconv_RF,
+        deconv_coef     = deconv_coef,
+        deconv_resolved = deconv_resolved,
+        deconv_rsquared = deconv_rsquared
+    )
+}
