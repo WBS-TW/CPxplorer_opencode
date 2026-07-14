@@ -6,7 +6,7 @@
         "names": {
           "type": "character",
           "attributes": {},
-          "value": ["Molecule_Formula", "Compound_Class", "Halo_perc", "Charge", "Adduct", "Adduct_Formula", "Isotopologue", "Isotope_Formula", "m/z", "Rel_ab", "12C", "13C", "1H", "2H", "35Cl", "37Cl"]
+          "value": ["Molecule_Formula", "Compound_Class", "Halo_perc", "Charge", "Adduct", "Adduct_Formula", "Isotopologue", "Isotope_Formula", "m/z", "Rel_ab", "12C", "13C", "1H", "2H", "35Cl", "37Cl", "Parent_Formula"]
         },
         "row.names": {
           "type": "integer",
@@ -99,6 +99,11 @@
           "type": "double",
           "attributes": {},
           "value": [0, 0, 1, 1, 2, 2, 3]
+        },
+        {
+          "type": "character",
+          "attributes": {},
+          "value": ["C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3"]
         }
       ]
     }

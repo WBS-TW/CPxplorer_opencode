@@ -260,7 +260,7 @@ generateInput_Envipat_advanced <- function(data = data, Class = Class, Adduct_Io
         dplyr::rowwise() |>
         dplyr::mutate(Molecule_Halo_perc = calculate_haloperc(Molecule_Formula)) |>
         dplyr::ungroup() |>
-        dplyr::select(Molecule_Formula, Molecule_Halo_perc, Charge, Compound_Class, TP, Adduct_Ion, Adduct_Annotation, Adduct_Formula, C, H, Cl, Br, S, O, `F`)
+        dplyr::select(Molecule_Formula, Parent_Formula, Molecule_Halo_perc, Charge, Compound_Class, TP, Adduct_Ion, Adduct_Annotation, Adduct_Formula, C, H, Cl, Br, S, O, `F`)
 
     return(data)
 }
@@ -370,7 +370,7 @@ getAdduct_normal <- function(adduct_ions, C, Cl, Clmax, threshold) {
                 dplyr::select(Molecule_Formula, Compound_Class, Halo_perc, Charge, Adduct, Adduct_Formula, Isotopologue, Isotope_Formula, `m/z`, Rel_ab, `12C`, `13C`, `1H`, `2H`, `35Cl`, `37Cl`, `79Br`, `81Br`)
             data_ls[[j]] <- dat
         }
-    }else { # for other adducts
+    } else { # for other adducts
         for (j in seq_along(data$Adduct_Formula)) {
             Adduct_Formula <- data$Adduct_Formula[j]
             Molecule_Formula <- data$Molecule_Formula[j]
@@ -420,6 +420,9 @@ getAdduct_normal <- function(adduct_ions, C, Cl, Clmax, threshold) {
 
     # combine all elements in list list to get dataframe
     data_ls <- do.call(rbind, data_ls)
+
+    data_ls <- data_ls |>
+        dplyr::mutate(Parent_Formula = Molecule_Formula)
 
 
     # combine both all adduct ions
@@ -537,6 +540,9 @@ getAdduct_BCA <- function(adduct_ions, C, Cl, Br, Clmax, Brmax, threshold) {
     # combine all elements in list list to get dataframe
     data_ls <- do.call(rbind, data_ls)
 
+    data_ls <- data_ls |>
+        dplyr::mutate(Parent_Formula = Molecule_Formula)
+
 
     # combine both all adduct ions
     CP_allions <- rbind(CP_allions, data_ls)
@@ -544,10 +550,10 @@ getAdduct_BCA <- function(adduct_ions, C, Cl, Br, Clmax, Brmax, threshold) {
 
 }
 
+
 #############################################################################
 
 getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, Brmax, threshold) {
-
     # Regex to extract strings
 
     # ion_modes <- stringr::str_extract(adduct_ions, "(?<=\\]).{1}") # Using lookbehind assertion to extract ion mode
@@ -559,6 +565,7 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
         data <- crossing(C, Cl) |> #set combinations of C and Cl
             dplyr::filter(C >= Cl) |> # filter so Cl dont exceed C atoms
             dplyr::filter(Cl <= Clmax) |> # limit chlorine atoms.
+            dplyr::mutate(Parent_Formula = paste0("C", C, "H", 2*C+2-Cl, "Cl", Cl)) |>
             dplyr::mutate(H = dplyr::case_when(# add H atoms
                 TP == "None" ~ 2*C+2-Cl, #PCA general formula 2*C+2-Cl
                 TP == "-H+OH" ~ 2*C+2-Cl, #no net change of H
@@ -585,6 +592,7 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
         data <- crossing(C, Cl) |>
             dplyr::filter(C >= Cl) |>
             dplyr::filter(Cl <= Clmax) |>
+            dplyr::mutate(Parent_Formula = paste0("C", C, "H", 2*C-Cl, "Cl", Cl)) |>
             dplyr::mutate(H = dplyr::case_when(# add H atoms.
                 TP == "None" ~ 2*C-Cl, #PCO general formula 2*C-Cl
                 TP == "-H+OH" ~ 2*C-Cl,
@@ -613,6 +621,7 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
             dplyr::filter(Cl <= Clmax) |>  # limit chlorine atoms.
             dplyr::filter(Br <= Brmax) |>
             dplyr::filter(Br + Cl <= C) |>
+            dplyr::mutate(Parent_Formula = paste0("C", C, "H", 2*C+2-Cl-Br, "Cl", Cl, "Br", Br)) |>
             dplyr::mutate(H = dplyr::case_when(# add H atoms.
                 TP == "None" ~ 2*C+2-Cl-Br, #BCA general formula
                 TP == "-H+OH" ~ 2*C+2-Cl-Br,
@@ -667,6 +676,7 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
     for (j in seq_along(data$Molecule_Formula)) {
         Adduct_Formula <- data$Adduct_Formula[j]
         Molecule_Formula <- data$Molecule_Formula[j]
+        Parent_Formula <- data$Parent_Formula[j]
         Compound_Class <- data$Compound_Class[j]
         TP <- data$TP[j]
         Charge <- data$Charge[j]
@@ -683,6 +693,7 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
             dplyr::mutate(Isotope_Formula = create_formula_isotope(`12C`,`13C`, `1H`, `2H`, `35Cl`, `37Cl`, `79Br`, `81Br`,
                                                             `16O`, `17O`, `18O`, `32S`, `33S`, `34S`, `36S`, `19F`)) |>
             dplyr::mutate(Molecule_Formula = Molecule_Formula) |>
+            dplyr::mutate(Parent_Formula = Parent_Formula) |>
             dplyr::mutate(Molecule_Halo_perc = Molecule_Halo_perc) |>
             dplyr::mutate(Compound_Class = Compound_Class) |>
             dplyr::mutate(TP = TP) |>
@@ -713,7 +724,7 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
                 `13C` + (`37Cl`+`81Br` + `18O` + `34S`)*2 == 20 ~ "+20")) |>
             dplyr::mutate(Adduct_Isotopologue = paste0(Adduct_Ion, " ", Isotopologue)) |>
             dplyr::rename(Rel_ab = abundance) |>
-            dplyr::select(Molecule_Formula, Molecule_Halo_perc, Compound_Class, TP, Charge, Adduct_Annotation, Adduct_Isotopologue, Adduct_Formula, Isotopologue, Isotope_Formula, `m/z`, Rel_ab, `12C`, `13C`, `1H`, `2H`, `35Cl`, `37Cl`, everything())
+            dplyr::select(Molecule_Formula, Parent_Formula, Molecule_Halo_perc, Compound_Class, TP, Charge, Adduct_Annotation, Adduct_Isotopologue, Adduct_Formula, Isotopologue, Isotope_Formula, `m/z`, Rel_ab, `12C`, `13C`, `1H`, `2H`, `35Cl`, `37Cl`, everything())
         data_ls[[j]] <- dat
     }
 
