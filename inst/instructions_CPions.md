@@ -37,7 +37,7 @@ The first line will produce the m/z for the [M+Cl]- adduct ion of the IS with th
 ## Advanced settings tab  
 Mostly same initial parameters as Normal settings. In advanced settings, there is more flexibility to combine and mix the `Compound Class`, `Adduct`, `Charge`, and `Transformation product`.  
   
-### Output table  
+## Output table  
   
 __Molecule_Formula__: the chemical formula of the molecular compound (or the transformation product).  
 
