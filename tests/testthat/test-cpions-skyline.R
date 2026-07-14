@@ -6,6 +6,8 @@ test_that("CPions Skyline fixture matches expected output", {
         c(
             "Molecule List Name",
             "Molecule Name",
+            "Parent_Formula",
+            "Adduct",
             "Precursor Charge",
             "Label Type",
             "Precursor m/z",
@@ -18,8 +20,6 @@ test_that("CPions Skyline fixture matches expected output", {
             "Closest Interference m/z",
             "Closest Interference Molecule",
             "Resolution Needed",
-            "Adduct",
-            "Parent_Formula",
             "Interference at MS Res?",
             "Note"
         )

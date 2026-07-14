@@ -6,7 +6,7 @@
         "names": {
           "type": "character",
           "attributes": {},
-          "value": ["Molecule_Formula", "Compound_Class", "Halo_perc", "Charge", "Adduct", "Adduct_Formula", "Isotopologue", "Isotope_Formula", "m/z", "Rel_ab", "12C", "13C", "1H", "2H", "35Cl", "37Cl", "Parent_Formula"]
+          "value": ["Molecule_Formula", "Parent_Formula", "Adduct", "Compound_Class", "Halo_perc", "Charge", "Adduct_Formula", "Isotopologue", "Isotope_Formula", "m/z", "Rel_ab", "12C", "13C", "1H", "2H", "35Cl", "37Cl"]
         },
         "row.names": {
           "type": "integer",
@@ -28,6 +28,16 @@
         {
           "type": "character",
           "attributes": {},
+          "value": ["C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3"]
+        },
+        {
+          "type": "character",
+          "attributes": {},
+          "value": ["[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-"]
+        },
+        {
+          "type": "character",
+          "attributes": {},
           "value": ["PCA", "PCA", "PCA", "PCA", "PCA", "PCA", "PCA"]
         },
         {
@@ -39,11 +49,6 @@
           "type": "integer",
           "attributes": {},
           "value": [-1, -1, -1, -1, -1, -1, -1]
-        },
-        {
-          "type": "character",
-          "attributes": {},
-          "value": ["[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-", "[PCA+Cl]-"]
         },
         {
           "type": "character",
@@ -99,11 +104,6 @@
           "type": "double",
           "attributes": {},
           "value": [0, 0, 1, 1, 2, 2, 3]
-        },
-        {
-          "type": "character",
-          "attributes": {},
-          "value": ["C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3", "C10H19Cl3"]
         }
       ]
     }

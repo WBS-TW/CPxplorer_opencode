@@ -374,7 +374,7 @@ CPions_server <- function(input, output, session) {
         TP <- as.character(selectedTP_adv())
 
         # function to get adducts or fragments
-        CP_allions_template <- data.frame(Molecule_Formula = character(), Molecule_Halo_perc = double())
+        CP_allions_template <- data.frame(Molecule_Formula = character(), Halo_perc = double())
         CP_allions_inputs <- vector("list", length(Class) * length(Adducts) * length(TP))
         input_idx <- 0L
 
@@ -660,11 +660,10 @@ if(input$skylineoutput == "mz"){ #Removed  skylineoutput==IonFormula since not c
     output$adduct_filter_ui <- shiny::renderUI({
         data <- CP_allions_skyline_reactive()
         shiny::req(data)
-        adduct_col <- intersect(c("Adduct", "Adduct_Annotation"), names(data))[1]
         shiny::selectInput(
             "adduct_filter",
             label = "Filter by Adduct",
-            choices = unique(sort(data[[adduct_col]])),
+            choices = unique(sort(data[["Adduct"]])),
             selected = NULL,
             multiple = TRUE,
             width = "100%"
@@ -677,8 +676,7 @@ if(input$skylineoutput == "mz"){ #Removed  skylineoutput==IonFormula since not c
         if (is.null(input$adduct_filter) || length(input$adduct_filter) == 0) {
             return(data)
         }
-        adduct_col <- intersect(c("Adduct", "Adduct_Annotation"), names(data))[1]
-        dplyr::filter(data, !!rlang::sym(adduct_col) %in% input$adduct_filter)
+        dplyr::filter(data, .data[["Adduct"]] %in% input$adduct_filter)
     })
 
     output$Table3 <- DT::renderDT({

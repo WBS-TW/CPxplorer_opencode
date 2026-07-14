@@ -116,8 +116,8 @@ calculate_haloperc <- function(Molecule_Formula) {
         dplyr::summarise(sum(MW_atoms)) |>
         as.double()
 
-    Molecule_Halo_perc <- round(mw_halo/mw*100, 0)
-    return(Molecule_Halo_perc)
+    Halo_perc <- round(mw_halo/mw*100, 0)
+    return(Halo_perc)
 }
 
 
@@ -215,10 +215,10 @@ generateInput_Envipat_advanced <- function(data = data, Class = Class, Adduct_Io
     data <- data |>
         dplyr::mutate(Adduct_Ion = Adduct_Ion) |>
         dplyr::mutate(Charge = Charge) |>
-        dplyr::mutate(Adduct_Annotation = dplyr::case_when(
+        dplyr::mutate(Adduct = dplyr::case_when(
             TP == "None" ~ paste0("[", Class, Adduct_Ion, "]", Charge),
             .default = paste0("[", Class, TP, Adduct_Ion, "]", Charge))) |>
-        dplyr::mutate(Adduct_Annotation = stringr::str_replace(Adduct_Annotation, "\\d$", "")) |>
+        dplyr::mutate(Adduct = stringr::str_replace(Adduct, "\\d$", "")) |>
         dplyr::mutate(Compound_Class = Class) |>
         #dplyr::mutate(TP = TP) |>
         dplyr::mutate(TP = paste0(TP)) |>
@@ -258,9 +258,9 @@ generateInput_Envipat_advanced <- function(data = data, Class = Class, Adduct_Io
             .default = 0)) |>
         dplyr::mutate(Adduct_Formula = create_formula(C, H, Cl, Br, S, O, `F`))|>
         dplyr::rowwise() |>
-        dplyr::mutate(Molecule_Halo_perc = calculate_haloperc(Molecule_Formula)) |>
+        dplyr::mutate(Halo_perc = calculate_haloperc(Molecule_Formula)) |>
         dplyr::ungroup() |>
-        dplyr::select(Molecule_Formula, Parent_Formula, Molecule_Halo_perc, Charge, Compound_Class, TP, Adduct_Ion, Adduct_Annotation, Adduct_Formula, C, H, Cl, Br, S, O, `F`)
+        dplyr::select(Molecule_Formula, Parent_Formula, Adduct, Halo_perc, Charge, Compound_Class, TP, Adduct_Ion, Adduct_Formula, C, H, Cl, Br, S, O, `F`)
 
     return(data)
 }
@@ -422,7 +422,9 @@ getAdduct_normal <- function(adduct_ions, C, Cl, Clmax, threshold) {
     data_ls <- do.call(rbind, data_ls)
 
     data_ls <- data_ls |>
-        dplyr::mutate(Parent_Formula = Molecule_Formula)
+        dplyr::mutate(Parent_Formula = Molecule_Formula) |>
+        dplyr::relocate(Parent_Formula, .after = Molecule_Formula) |>
+        dplyr::relocate(Adduct, .after = Parent_Formula)
 
 
     # combine both all adduct ions
@@ -541,7 +543,9 @@ getAdduct_BCA <- function(adduct_ions, C, Cl, Br, Clmax, Brmax, threshold) {
     data_ls <- do.call(rbind, data_ls)
 
     data_ls <- data_ls |>
-        dplyr::mutate(Parent_Formula = Molecule_Formula)
+        dplyr::mutate(Parent_Formula = Molecule_Formula) |>
+        dplyr::relocate(Parent_Formula, .after = Molecule_Formula) |>
+        dplyr::relocate(Adduct, .after = Parent_Formula)
 
 
     # combine both all adduct ions
@@ -680,8 +684,8 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
         Compound_Class <- data$Compound_Class[j]
         TP <- data$TP[j]
         Charge <- data$Charge[j]
-        Molecule_Halo_perc <- data$Molecule_Halo_perc[j]
-        Adduct_Annotation <- data$Adduct_Annotation[j]
+        Halo_perc <- data$Halo_perc[j]
+        Adduct <- data$Adduct[j]
         dat <- getisotopes(x = as.character(data$Adduct_Formula[j]))
         dat <- as.data.frame(dat[[1]])
 
@@ -694,10 +698,10 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
                                                             `16O`, `17O`, `18O`, `32S`, `33S`, `34S`, `36S`, `19F`)) |>
             dplyr::mutate(Molecule_Formula = Molecule_Formula) |>
             dplyr::mutate(Parent_Formula = Parent_Formula) |>
-            dplyr::mutate(Molecule_Halo_perc = Molecule_Halo_perc) |>
+            dplyr::mutate(Halo_perc = Halo_perc) |>
             dplyr::mutate(Compound_Class = Compound_Class) |>
             dplyr::mutate(TP = TP) |>
-            dplyr::mutate(Adduct_Annotation =  Adduct_Annotation) |>
+            dplyr::mutate(Adduct =  Adduct) |>
             dplyr::mutate(Adduct_Formula =  Adduct_Formula) |>
             dplyr::mutate(Charge = Charge) |>
             dplyr::mutate(Isotopologue = case_when(
@@ -724,7 +728,7 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
                 `13C` + (`37Cl`+`81Br` + `18O` + `34S`)*2 == 20 ~ "+20")) |>
             dplyr::mutate(Adduct_Isotopologue = paste0(Adduct_Ion, " ", Isotopologue)) |>
             dplyr::rename(Rel_ab = abundance) |>
-            dplyr::select(Molecule_Formula, Parent_Formula, Molecule_Halo_perc, Compound_Class, TP, Charge, Adduct_Annotation, Adduct_Isotopologue, Adduct_Formula, Isotopologue, Isotope_Formula, `m/z`, Rel_ab, `12C`, `13C`, `1H`, `2H`, `35Cl`, `37Cl`, everything())
+            dplyr::select(Molecule_Formula, Parent_Formula, Adduct, Halo_perc, Compound_Class, TP, Charge, Adduct_Isotopologue, Adduct_Formula, Isotopologue, Isotope_Formula, `m/z`, Rel_ab, `12C`, `13C`, `1H`, `2H`, `35Cl`, `37Cl`, everything())
         data_ls[[j]] <- dat
     }
 
@@ -1070,12 +1074,12 @@ build_skyline_transition_list <- function(CP_allions, mode, quant_ion, ms_resolu
 
         if (quant_ion == "Most intense") {
             skyline_data <- skyline_data |>
-                dplyr::mutate(Note = paste0("{", Adduct_Annotation, "}", "{", Rel_ab, "}")) |>
+                dplyr::mutate(Note = paste0("{", Adduct, "}", "{", Rel_ab, "}")) |>
                 dplyr::group_by(`Molecule Name`) |>
                 dplyr::mutate(`Label Type` = dplyr::if_else(Rel_ab == max(Rel_ab), "Quan", "Qual")) |>
                 dplyr::ungroup() |>
                 append_skyline_note_warnings(
-                    annotation_col = "Adduct_Annotation",
+                    annotation_col = "Adduct",
                     ms_resolution = ms_resolution
                 )
         } else {
@@ -1085,7 +1089,7 @@ build_skyline_transition_list <- function(CP_allions, mode, quant_ion, ms_resolu
 
             skyline_data <- select_skyline_filtered_candidates(
                 skyline_data = skyline_data,
-                annotation_col = "Adduct_Annotation",
+                annotation_col = "Adduct",
                 ms_resolution = ms_resolution,
                 preferred_qual_n = preferred_qual_n,
                 strategy = strategy
@@ -1136,6 +1140,8 @@ build_skyline_transition_list <- function(CP_allions, mode, quant_ion, ms_resolu
         dplyr::select(
             `Molecule List Name`,
             `Molecule Name`,
+            dplyr::any_of("Parent_Formula"),
+            dplyr::any_of("Adduct"),
             `Precursor Charge`,
             `Label Type`,
             `Precursor m/z`,
@@ -1148,10 +1154,7 @@ build_skyline_transition_list <- function(CP_allions, mode, quant_ion, ms_resolu
                 "Interfering Candidate Count",
                 "Closest Interference m/z",
                 "Closest Interference Molecule",
-                "Resolution Needed",
-                "Adduct",
-                "Adduct_Annotation",
-                "Parent_Formula"
+                "Resolution Needed"
             )),
             `Interference at MS Res?`,
             Note
