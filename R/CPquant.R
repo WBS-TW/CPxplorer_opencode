@@ -183,8 +183,7 @@ CPquant <- function(...){
                             "Recovery and MDL",
                             "Isotope QC Summary",
                             "Isotope Pattern Overlay",
-                            "Isotope Similarity Heatmap",
-                            "Isotope Ratio Residuals"
+                            "Isotope Similarity Heatmap"
                         ),
                         selected = "Recovery and MDL"
                     ),
@@ -214,10 +213,6 @@ CPquant <- function(...){
                         condition = "input.navQAQC == 'Isotope Similarity Heatmap'",
                         plotly::plotlyOutput("plotIsotopeSimilarityHeatmap", height = "80vh", width = "100%")
                     ),
-                    shiny::conditionalPanel(
-                        condition = "input.navQAQC == 'Isotope Ratio Residuals'",
-                        plotly::plotlyOutput("plotIsotopeRatioResiduals", height = "80vh", width = "100%")
-                    )
                 )
             )
         ),
@@ -432,7 +427,7 @@ CPquant <- function(...){
                     dplyr::select(-coef) |>
                     tidyr::unnest(c(RF, intercept, cal_rsquared)) |>
                     dplyr::mutate(RF = if_else(RF < 0, 0, RF)) |>
-                    dplyr::mutate(cal_rsquared = ifelse(is.nan(cal_rsquared), 0, cal_rsquared)) |>
+                    dplyr::mutate(cal_rsquared = ifelse(is.nan(cal_rsquared) | is.na(cal_rsquared), 0, cal_rsquared)) |>
                     dplyr::mutate(RF = if_else(cal_rsquared < removeRsquared(), 0, RF)) |>
                     dplyr::ungroup() |>
                     dplyr::group_by(Batch_Name) |>
@@ -509,7 +504,7 @@ CPquant <- function(...){
                     plot_meas_vs_theor_ratio(Skyline_output_filt)
                 })
 
-                isotope_qc_input <- base_df()
+                isotope_qc_input <- Skyline_output_filt
                 rmv_qc <- input$removeSamples
                 if (!is.null(rmv_qc) && length(rmv_qc) > 0) {
                     isotope_qc_input <- isotope_qc_input |>
@@ -520,6 +515,7 @@ CPquant <- function(...){
                 Isotope_QC(isotope_qc)
 
                 output$table_isotope_qc <- DT::renderDT({
+                    shiny::req(Isotope_QC())
                     Isotope_QC()$summary_qc |>
                         dplyr::mutate(
                             cosine_similarity = round(cosine_similarity, 3),
@@ -582,11 +578,6 @@ CPquant <- function(...){
                 output$plotIsotopeSimilarityHeatmap <- plotly::renderPlotly({
                     req(Isotope_QC())
                     plot_isotope_similarity_heatmap(Isotope_QC()$summary_qc)
-                })
-
-                output$plotIsotopeRatioResiduals <- plotly::renderPlotly({
-                    req(Isotope_QC())
-                    plot_isotope_ratio_residuals(Isotope_QC()$ion_qc)
                 })
 
                 # ---- DECONVOLUTION ----

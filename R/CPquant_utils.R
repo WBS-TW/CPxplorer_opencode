@@ -289,6 +289,8 @@ plot_quanqualratio <- function(Skyline_output_filt) {
         dplyr::mutate(QuanMZ = ifelse(Isotope_Label_Type == "Quan", Chromatogram_Precursor_MZ, NA)) |>
         tidyr::fill(QuanMZ, .direction = "downup") |>
         dplyr::mutate(QuanQualRatio = ifelse(Isotope_Label_Type == "Qual", Quan_Area/Area, 1)) |>
+        dplyr::mutate(QuanQualRatio = dplyr::na_if(QuanQualRatio, Inf)) |>
+        dplyr::mutate(QuanQualRatio = dplyr::na_if(QuanQualRatio, NaN)) |>
         tidyr::replace_na(list(QuanQualRatio = 0)) |>
         dplyr::mutate(QuanQualMZ = paste0(QuanMZ,"/",Chromatogram_Precursor_MZ)) |>
         dplyr::ungroup() |>
@@ -315,15 +317,21 @@ plot_meas_vs_theor_ratio <- function(Skyline_output_filt) {
         dplyr::mutate(QuanMZ = ifelse(Isotope_Label_Type == "Quan", Chromatogram_Precursor_MZ, NA)) |>
         tidyr::fill(QuanMZ, .direction = "downup") |>
         dplyr::mutate(QuanQualRatio = ifelse(Isotope_Label_Type == "Qual", Quan_Area/Area, 1)) |>
+        dplyr::mutate(QuanQualRatio = dplyr::na_if(QuanQualRatio, Inf)) |>
+        dplyr::mutate(QuanQualRatio = dplyr::na_if(QuanQualRatio, NaN)) |>
         tidyr::replace_na(list(QuanQualRatio = 0)) |>
         dplyr::mutate(QuanQualMZ = paste0(QuanMZ,"/",Chromatogram_Precursor_MZ)) |>
 
         dplyr::mutate(Quan_Rel_Ab = ifelse(Isotope_Label_Type == "Quan", Rel_Ab, NA)) |>
         tidyr::fill(Quan_Rel_Ab, .direction = "downup") |>
         dplyr::mutate(QuanQual_Rel_Ab_Ratio = ifelse(Isotope_Label_Type == "Qual", Quan_Rel_Ab/Rel_Ab, 1)) |>
+        dplyr::mutate(QuanQual_Rel_Ab_Ratio = dplyr::na_if(QuanQual_Rel_Ab_Ratio, Inf)) |>
+        dplyr::mutate(QuanQual_Rel_Ab_Ratio = dplyr::na_if(QuanQual_Rel_Ab_Ratio, NaN)) |>
         tidyr::replace_na(list(QuanQual_Rel_Ab_Ratio = 0)) |>
         dplyr::ungroup() |>
         dplyr::mutate(MeasVSTheo = QuanQualRatio/QuanQual_Rel_Ab_Ratio) |>
+        dplyr::mutate(MeasVSTheo = dplyr::na_if(MeasVSTheo, Inf)) |>
+        dplyr::mutate(MeasVSTheo = dplyr::na_if(MeasVSTheo, NaN)) |>
         dplyr::mutate(Is_Outlier = MeasVSTheo > 3 | MeasVSTheo < 0.3) |>
         dplyr::mutate(Is_Outlier = factor(Is_Outlier, levels = c(FALSE, TRUE), labels = c("Within Limit", "Outlier"))) |>
         dplyr::select(Replicate_Name, Sample_Type, Molecule_List, Molecule, QuanQualMZ, QuanQualRatio, QuanQual_Rel_Ab_Ratio, MeasVSTheo, Is_Outlier) |>
@@ -353,6 +361,8 @@ prepare_isotope_pattern_qc <- function(Skyline_output_filt) {
             Measured_Theoretical_Ratio = Observed_Pct / Theoretical_Pct,
             Ion_Label = paste(Isotope_Label_Type, round(Chromatogram_Precursor_MZ, 6), sep = " ")
         ) |>
+        dplyr::mutate(Measured_Theoretical_Ratio = dplyr::na_if(Measured_Theoretical_Ratio, Inf)) |>
+        dplyr::mutate(Measured_Theoretical_Ratio = dplyr::na_if(Measured_Theoretical_Ratio, NaN)) |>
         dplyr::ungroup()
 
     summary_qc <- ion_qc |>
@@ -373,17 +383,21 @@ prepare_isotope_pattern_qc <- function(Skyline_output_filt) {
                 NA_real_
             ),
             weighted_abs_percent_error = {
-                weights <- Theoretical_Pct / sum(Theoretical_Pct, na.rm = TRUE)
-                sum(abs(Observed_Pct - Theoretical_Pct) * weights, na.rm = TRUE)
+                theoretical_sum <- sum(Theoretical_Pct, na.rm = TRUE)
+                if (theoretical_sum == 0) NA_real_ else {
+                    weights <- Theoretical_Pct / theoretical_sum
+                    sum(abs(Observed_Pct - Theoretical_Pct) * weights, na.rm = TRUE)
+                }
             },
             max_ion_ratio_error = {
                 ratio_error <- abs(log2(Measured_Theoretical_Ratio))
-                if (any(!is.na(ratio_error))) max(ratio_error, na.rm = TRUE) else NA_real_
+                ratio_error <- dplyr::na_if(ratio_error, NaN)
+                if (any(!is.na(ratio_error) & is.finite(ratio_error))) max(ratio_error, na.rm = TRUE) else NA_real_
             },
             .groups = "drop"
         ) |>
         dplyr::mutate(
-            max_ion_ratio_error = dplyr::if_else(is.infinite(max_ion_ratio_error), NA_real_, max_ion_ratio_error),
+            max_ion_ratio_error = dplyr::if_else(is.infinite(max_ion_ratio_error) | is.nan(max_ion_ratio_error), NA_real_, max_ion_ratio_error),
             qc_flag = dplyr::case_when(
                 is.na(cosine_similarity) ~ "No signal",
                 cosine_similarity >= 0.95 ~ "Pass",
@@ -422,9 +436,8 @@ plot_isotope_pattern_overlay <- function(ion_qc, selected_replicate, selected_mo
             y = ~Theoretical_Pct,
             name = "Theoretical",
             type = "scatter",
-            mode = "lines+markers",
-            line = list(color = "black"),
-            marker = list(color = "black")
+            mode = "markers",
+            marker = list(color = "black", size = 8)
         ) |>
         plotly::layout(
             title = paste("Observed vs theoretical isotope pattern:", selected_molecule),
@@ -469,6 +482,7 @@ plot_isotope_similarity_heatmap <- function(summary_qc) {
 plot_isotope_ratio_residuals <- function(ion_qc) {
 
     plot_data <- ion_qc |>
+        dplyr::filter(!is.na(Measured_Theoretical_Ratio), Measured_Theoretical_Ratio > 0) |>
         dplyr::mutate(
             Is_Outlier = Measured_Theoretical_Ratio > 3 | Measured_Theoretical_Ratio < 0.3,
             Is_Outlier = factor(Is_Outlier, levels = c(FALSE, TRUE), labels = c("Within Limit", "Outlier"))

@@ -2,7 +2,7 @@
 # CPquant
   
 If you are using CPxplorer, please cite our paper:  
-Beloki Ezker et al. Streamlining Quantification and Data Harmonization of Polychlorinated Alkanes Using a Platform-Independent Workflow. Environ. Sci. Technol. 2025, doi/10.1021/acs.est.5c04928.  
+_Beloki Ezker et al. Streamlining Quantification and Data Harmonization of Polychlorinated Alkanes Using a Platform-Independent Workflow. Environ. Sci. Technol. 2025, doi/10.1021/acs.est.5c04928_  
   
 
 ## Introduction    
