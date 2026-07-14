@@ -181,9 +181,10 @@ CPquant <- function(...){
                         "Choose tab:",
                         choices = c(
                             "Recovery and MDL",
+                            "Isotope Similarity Heatmap",
                             "Isotope QC Summary",
-                            "Isotope Pattern Overlay",
-                            "Isotope Similarity Heatmap"
+                            "Isotope Pattern Overlay"
+
                         ),
                         selected = "Recovery and MDL"
                     ),

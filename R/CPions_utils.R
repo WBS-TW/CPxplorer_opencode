@@ -959,16 +959,16 @@ append_skyline_note_warnings <- function(transitions, annotation_col, ms_resolut
     if (is.null(ms_resolution)) {
         return(
             transitions |>
-                dplyr::mutate(`Interference at MS Res?` = NA)
+                dplyr::mutate(`Interference from other filtered ions?` = NA)
         )
     }
 
     transitions |>
         dplyr::mutate(.annotation_value = .data[[annotation_col]]) |>
         compute_transition_interference(ms_resolution) |>
-        dplyr::rename(`Interference at MS Res?` = interference) |>
+        dplyr::rename(`Interference from other filtered ions?` = interference) |>
         dplyr::mutate(Note = dplyr::case_when(
-            `Interference at MS Res?` == "YES" ~ paste0("{", .annotation_value, "}", "{", Rel_ab, "}", "[INTERFERENCE]"),
+            `Interference from other filtered ions?` == "YES" ~ paste0("{", .annotation_value, "}", "{", Rel_ab, "}", "[INTERFERENCE]"),
             TRUE ~ paste0("{", .annotation_value, "}", "{", Rel_ab, "}")
         ))
 }
@@ -1021,9 +1021,9 @@ select_skyline_filtered_candidates <- function(skyline_data, annotation_col, ms_
 
     dplyr::bind_rows(selected_rows) |>
         compute_transition_interference(ms_resolution) |>
-        dplyr::rename(`Interference at MS Res?` = interference) |>
+        dplyr::rename(`Interference from other filtered ions?` = interference) |>
         dplyr::mutate(Note = dplyr::case_when(
-            .original_interference == "YES" | `Interference at MS Res?` == "YES" ~ paste0("{", .annotation_value, "}", "{", Rel_ab, "}", "[INTERFERENCE]"),
+            .original_interference == "YES" | `Interference from other filtered ions?` == "YES" ~ paste0("{", .annotation_value, "}", "{", Rel_ab, "}", "[INTERFERENCE]"),
             TRUE ~ paste0("{", .annotation_value, "}", "{", Rel_ab, "}")
         ))
 }
@@ -1156,7 +1156,7 @@ build_skyline_transition_list <- function(CP_allions, mode, quant_ion, ms_resolu
                 "Closest Interference Molecule",
                 "Resolution Needed"
             )),
-            `Interference at MS Res?`,
+            `Interference from other filtered ions?`,
             Note
         )
 }

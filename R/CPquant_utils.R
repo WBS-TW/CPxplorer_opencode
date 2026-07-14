@@ -400,8 +400,8 @@ prepare_isotope_pattern_qc <- function(Skyline_output_filt) {
             max_ion_ratio_error = dplyr::if_else(is.infinite(max_ion_ratio_error) | is.nan(max_ion_ratio_error), NA_real_, max_ion_ratio_error),
             qc_flag = dplyr::case_when(
                 is.na(cosine_similarity) ~ "No signal",
-                cosine_similarity >= 0.95 ~ "Pass",
-                cosine_similarity >= 0.85 ~ "Review",
+                cosine_similarity >= 0.90 ~ "Pass",
+                cosine_similarity >= 0.75 ~ "Review",
                 TRUE ~ "Fail"
             )
         )

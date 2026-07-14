@@ -164,11 +164,11 @@ ui <- shiny::navbarPage(
                                         "Balanced" = "balanced",
                                         "Least interference Quan" = "interference"
                                      ),
-                                     selected = "abundance"
+                                     selected = "balanced"
                                  ),
                                  shiny::numericInput(
                                      "skyline_qual_n",
-                                     label = "Preferred number of Qual ions",
+                                     label = "Number of Qual ions",
                                      value = 2,
                                      min = 0,
                                      max = 20,
@@ -693,7 +693,7 @@ if(input$skylineoutput == "mz"){ #Removed  skylineoutput==IonFormula since not c
                           rownames = FALSE)
         ) |>
             DT::formatStyle(
-                "Interference at MS Res?",
+                "Interference from other filtered ions?",
                 target = "row",
                 backgroundColor = DT::styleEqual(c("YES", "NO"), c("#fff3cd", NA)),
                 fontWeight = DT::styleEqual(c("YES", "NO"), c("600", NA))
@@ -704,7 +704,7 @@ if(input$skylineoutput == "mz"){ #Removed  skylineoutput==IonFormula since not c
 
     output[["download_skyline_csv"]] <- shiny::downloadHandler(
         filename = function() {
-            "Skyline_transition_list_skyline.csv"
+            "Skyline_transition_list.csv"
         },
         content = function(file) {
             data <- CP_allions_skyline_filtered()
@@ -725,7 +725,7 @@ if(input$skylineoutput == "mz"){ #Removed  skylineoutput==IonFormula since not c
 
     output[["download_skyline_xlsx"]] <- shiny::downloadHandler(
         filename = function() {
-            "Skyline_transition_list_skyline.xlsx"
+            "Skyline_transition_list.xlsx"
         },
         content = function(file) {
             data <- CP_allions_skyline_filtered()

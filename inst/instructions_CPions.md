@@ -1,5 +1,5 @@
 
-# Introduction
+## Introduction
 This app generates a list of mass-over-charges (m/z) for PCAs and structural analogues to investigate potential overlapping m/z during mass spectrometric analysis.  
   
 If you are using CPxplorer, please cite our paper:  
@@ -25,7 +25,7 @@ __[xxx-yy]__ or __[xxx-yy-zz]__: where _xxx_ refers to the main groups, _-yy_ re
 __[ ]-__ and __[ ]+__ refers to the charge of the ion (limited to single charged species, +1 or -1).  
 _Note that [M+Cl-HCl]- can also be written as [M-H]-_  
 __Isotope rel ab threshold (%)__: is the threshold for relative abundance for isotopologues for each chemical formula of the adduct/fragment ion. Ions below this threshold will not be included into the generated ion table.  
-__Optional: add ion formula for IS/RS__: input the ion formula for IS or RS if needed. Enter one formula per line. Indicate IS or RS isotopic formula and charge separated by space. _The ion formula should be for the adduct ion_ and not the neutral chemical formula.  
+__Optional: add ion formula for IS/RS__: input the ion formula for IS or RS if needed. Enter one formula per line. Indicate IS or RS isotopic formula and charge separated by space. _The ion formula should be for the adduct ion_ (i.e. precursor ion) and not the neutral chemical formula.  
 The input for the ion formula is written in three parts, each separated by a `blank space`, the IS or RS, the ion formula where heavy isotopes are indicated by [13]C or [2]H, and the charge (+ or -).  
 Example:  
 IS [13]C10H16Cl7 -  
