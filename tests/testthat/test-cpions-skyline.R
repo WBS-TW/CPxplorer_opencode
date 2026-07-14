@@ -19,6 +19,7 @@ test_that("CPions Skyline fixture matches expected output", {
             "Closest Interference Molecule",
             "Resolution Needed",
             "Adduct",
+            "Parent_Formula",
             "Interference at MS Res?",
             "Note"
         )

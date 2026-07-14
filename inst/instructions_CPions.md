@@ -39,10 +39,12 @@ Mostly same initial parameters as Normal settings. In advanced settings, there i
   
 ### Output table  
   
-__Parent_Formula__: the chemical formula of the molecular ion.  
-  
-__Halo_perc__: for PCA, PCO chlorinated groups, the chlorination degree (mass percentage of Cl). If BCA, then it is the combined Cl+Br percentage.  
-  
+__Molecule_Formula__: the chemical formula of the molecular compound (or the transformation product).  
+
+__Halo_perc__: for PCA, PCO chlorinated groups, the chlorination degree (molecular weight percentage of Cl). If BCA, then it is the combined Cl+Br percentage.  
+
+__Parent_Formula__: the chemical formula of the parent compound without any transformation.  
+
 __Charge__: The charge of the ion.  
   
 __Fragment__: The fragment and isotopic type of the ion species.  

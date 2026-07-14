@@ -1150,7 +1150,8 @@ build_skyline_transition_list <- function(CP_allions, mode, quant_ion, ms_resolu
                 "Closest Interference Molecule",
                 "Resolution Needed",
                 "Adduct",
-                "Adduct_Annotation"
+                "Adduct_Annotation",
+                "Parent_Formula"
             )),
             `Interference at MS Res?`,
             Note
