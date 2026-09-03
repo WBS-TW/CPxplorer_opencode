@@ -35,7 +35,13 @@ _(make sure there is no empty last line)_
 The first line will produce the m/z for the [M+Cl]- adduct ion of the IS with the formula ^13^C~10~H~16~Cl~6~, while the second line is for the [M+Cl]- adduct ion for the ^13^C~12~H~18~Cl~8~ RS.  
   
 ## Advanced settings tab  
-Mostly same initial parameters as Normal settings. In advanced settings, there is more flexibility to combine and mix the `Compound Class`, `Adduct`, `Charge`, and `Transformation product`.  
+Mostly same initial parameters as Normal settings. Compound class, adduct, charge, and transformation product can be combined freely.  
+
+__Compound Class__: `PCA` (alkane, H = 2C+2−Cl), `PCO` (mono-olefin, H = 2C−Cl), `PCdiO` (di-olefin, H = 2C−2−Cl), `PCtriO` (tri-olefin, H = 2C−4−Cl), `BCA` (bromo-chloro alkane, H = 2C+2−Cl−Br). PCdiO and PCtriO are only in Advanced settings. Br min/max apply to BCA.  
+
+__Transformation product__: predefined notations (multiple allowed): `None`, `-Cl+OH`, `-H+OH`, `-2Cl+2OH`, `-2H+2OH`, `-2H+O`, `-H+SO4H`, `-H+C6H10O7`, `-2H+2O`, `-Br+OH`, `-2Br+2OH`, `-H+OCH3`, `-Cl+OCH3`, `-4H+2O`. `-Br+OH` / `-2Br+2OH` require BCA only.  
+
+__Custom transformation product__: unchecked by default. When checked, the dropdown is replaced by a text field. Enter one or more notations separated by `;`, e.g. `-H+OH; -Cl+OH; -2H+2OH`. `-H` is loss of one H; `+OH` is gain of OH; `-2H` is loss of two H. Empty input is `None`. Invalid grammar or a TP that is impossible for the selected class and C/Cl/Br range blocks calculation (no table). `-2H+O` is valid (ketone).  
   
 ## Output table  
   
