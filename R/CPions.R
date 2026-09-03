@@ -428,6 +428,17 @@ CPions_server <- function(input, output, session) {
         }
 
         CP_allions <- combine_cpions_tables(CP_allions_inputs, CP_allions_template)
+        if (nrow(CP_allions) == 0L) {
+            shiny::validate(shiny::need(
+                FALSE,
+                sprintf(
+                    "No ions remain: TP plus adduct leaves no Cl. TP: %s; class: %s; adduct: %s",
+                    paste(unique(TP), collapse = ", "),
+                    paste(unique(Class), collapse = ", "),
+                    paste(unique(Adducts), collapse = ", ")
+                )
+            ))
+        }
 
         # Add ISRS if textinput is not empty ""
         if(ISRS_input_adv() != ""){

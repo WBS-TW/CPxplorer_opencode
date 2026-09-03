@@ -147,6 +147,37 @@ test_that("BCA -Cl+OH decrements chlorine on the molecule formula", {
     expect_true(all(actual$TP == "-Cl+OH"))
 })
 
+test_that("getAdduct_advanced returns empty rows when TP plus adduct leaves no Cl", {
+    empty <- CPxplorer:::getAdduct_advanced(
+        Class = "PCA",
+        Adduct_Ion = "-Cl",
+        TP = "-Cl+OH",
+        Charge = "-",
+        C = 10:10,
+        Cl = 1:1,
+        Clmax = 1L,
+        Br = 0:0,
+        Brmax = 0L,
+        threshold = 5L
+    )
+    expect_equal(nrow(empty), 0)
+
+    ok <- CPxplorer:::getAdduct_advanced(
+        Class = "PCA",
+        Adduct_Ion = "+Cl",
+        TP = "-Cl+OH",
+        Charge = "-",
+        C = 10:10,
+        Cl = 1:1,
+        Clmax = 1L,
+        Br = 0:0,
+        Brmax = 0L,
+        threshold = 5L
+    )
+    expect_gt(nrow(ok), 0)
+    expect_setequal(names(empty), names(ok))
+})
+
 test_that("getAdduct_advanced supports PCdiO, PCtriO, and new TPs", {
     pca_gluc <- CPxplorer:::getAdduct_advanced(
         "PCA", "+Cl", "-H+C6H10O7", "-", 10:10, 6:6, 6L, 0:0, 0L, 5L
@@ -169,10 +200,13 @@ test_that("getAdduct_advanced supports PCdiO, PCtriO, and new TPs", {
 
 test_that("TP formula table covers the catalog with Excel example formulas", {
     tbl <- CPxplorer:::build_tp_formula_table()
+    catalog <- CPxplorer:::tp_catalog
     expect_identical(tbl[["Transformation product"]], CPxplorer:::tp_catalog_notations())
+    expect_identical(tbl[["General formula"]], catalog$general_formula)
     pca_none <- tbl[tbl[["Transformation product"]] == "None", ]
     expect_identical(pca_none[["Example parent formula"]], "C10H16Cl6")
     expect_identical(pca_none[["Example molecule formula"]], "C10H16Cl6")
+    expect_identical(pca_none[["General formula"]], "CxH2x+2-yCly")
     gluc <- tbl[tbl[["Transformation product"]] == "-H+C6H10O7", ]
     expect_identical(gluc[["Example molecule formula"]], "C16H25Cl6O7")
     br <- tbl[tbl[["Transformation product"]] == "-Br+OH", ]

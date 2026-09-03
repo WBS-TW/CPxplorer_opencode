@@ -105,21 +105,21 @@ parse_tp_list <- function(text) {
 }
 
 tp_catalog <- tibble::tribble(
-    ~notation,       ~name,
-    "None",          "None",
-    "-Cl+OH",        "Cl-hydroxylation",
-    "-H+OH",         "H-hydroxylation",
-    "-2Cl+2OH",      "Double Cl-hydroxylation",
-    "-2H+2OH",       "Double H-hydroxylation",
-    "-2H+O",         "Oxidation (ketone/aldehyde)",
-    "-H+SO4H",       "Sulfonation",
-    "-H+C6H10O7",    "Glucuronidation",
-    "-2H+2O",        "Carboxylic acid / omega-oxidation",
-    "-Br+OH",        "Br-hydroxylation",
-    "-2Br+2OH",      "Double Br-hydroxylation",
-    "-H+OCH3",       "Methoxylation",
-    "-Cl+OCH3",      "Cl-methoxylation",
-    "-4H+2O",        "Diketone"
+    ~notation,       ~name,                                  ~general_formula,                         ~note,
+    "None",          "None",                                 "CxH2x+2-yCly",                           NA_character_,
+    "-Cl+OH",        "Cl-hydroxylation",                     "CxH2x+2-y+1Cly-1O",                      "Give exact same chemical formula as -H+OH with one less Cl (here, C10H17Cl5)",
+    "-H+OH",         "H-hydroxylation",                      "CxH2x+2-yClyO",                           "Give exact same chemical formula as -Cl+OH with one more Cl",
+    "-2Cl+2OH",      "Double Cl-hydroxylation",              "CxH2x+2-y+2Cly-2O2",                      NA_character_,
+    "-2H+2OH",       "Double H-hydroxylation",               "CxH2x+2-yClyO2",                          NA_character_,
+    "-2H+O",         "Oxidation (ketone/aldehyde)",          "CxH2x+2-y-2ClyO",                         NA_character_,
+    "-H+SO4H",       "Sulfonation",                          "CxH2x+2-yClyO4S",                         NA_character_,
+    "-H+C6H10O7",    "Glucuronidation",                      "Cx+6H2x+2-y+9ClyO7",                     NA_character_,
+    "-2H+2O",        "Carboxylic acid / omega-oxidation",    "CxH2x+2-y-2ClyO2",                        NA_character_,
+    "-Br+OH",        "Br-hydroxylation",                     "CxH2x+2-y-z+1ClyBrz-1O",                  NA_character_,
+    "-2Br+2OH",      "Double Br-hydroxylation",              "CxH2x+2-y-z+2ClyBrz-2O2",                 NA_character_,
+    "-H+OCH3",       "Methoxylation",                        "Cx+1H2x+2-y+2ClyO",                      NA_character_,
+    "-Cl+OCH3",      "Cl-methoxylation",                     "Cx+1H2x+2-y+3Cly-1O",                     NA_character_,
+    "-4H+2O",        "Diketone",                             "CxH2x+2-y-4ClyO2",                        NA_character_
 )
 
 tp_catalog_notations <- function() {
@@ -793,7 +793,38 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
     data <- data |>
         dplyr::filter(Cl > 0)
     if (nrow(data) == 0) {
-        stop("TP plus adduct leaves no Cl", call. = FALSE)
+        return(data.frame(
+            Molecule_Formula = character(),
+            Parent_Formula = character(),
+            Adduct = character(),
+            Halo_perc = double(),
+            Compound_Class = character(),
+            TP = character(),
+            Charge = integer(),
+            Adduct_Isotopologue = character(),
+            Adduct_Formula = character(),
+            Isotopologue = character(),
+            Isotope_Formula = character(),
+            `m/z` = double(),
+            Rel_ab = double(),
+            `12C` = numeric(),
+            `13C` = numeric(),
+            `1H` = numeric(),
+            `2H` = numeric(),
+            `35Cl` = numeric(),
+            `37Cl` = numeric(),
+            `79Br` = numeric(),
+            `81Br` = numeric(),
+            `16O` = numeric(),
+            `17O` = numeric(),
+            `18O` = numeric(),
+            `32S` = numeric(),
+            `33S` = numeric(),
+            `34S` = numeric(),
+            `36S` = numeric(),
+            `19F` = numeric(),
+            check.names = FALSE
+        ))
     }
 
     # Create empty list for all ion formulas
@@ -876,28 +907,6 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
 
 }
 
-.tp_general_formulas <- c(
-    "None" = "CxH2x+2-yCly",
-    "-Cl+OH" = "CxH2x+2-y+1Cly-1O",
-    "-H+OH" = "CxH2x+2-yClyO",
-    "-2Cl+2OH" = "CxH2x+2-y+2Cly-2O2",
-    "-2H+2OH" = "CxH2x+2-yClyO2",
-    "-2H+O" = "CxH2x+2-y-2ClyO",
-    "-H+SO4H" = "CxH2x+2-yClyO4S",
-    "-H+C6H10O7" = "Cx+6H2x+2-y+9ClyO7",
-    "-2H+2O" = "CxH2x+2-y-2ClyO2",
-    "-Br+OH" = "CxH2x+2-y-z+1ClyBrz-1O",
-    "-2Br+2OH" = "CxH2x+2-y-z+2ClyBrz-2O2",
-    "-H+OCH3" = "Cx+1H2x+2-y+2ClyO",
-    "-Cl+OCH3" = "Cx+1H2x+2-y+3Cly-1O",
-    "-4H+2O" = "CxH2x+2-y-4ClyO2"
-)
-
-.tp_formula_notes <- c(
-    "-Cl+OH" = "Give exact same chemical formula as -H+OH with one less Cl (here, C10H17Cl5)",
-    "-H+OH" = "Give exact same chemical formula as -Cl+OH with one more Cl"
-)
-
 .tp_formula_mz_col <- "Example adduct ion mz (calculated exact mass of the monoisotopic adduct ion of the transformation product Use: www.envipat.eawag.ch"
 
 build_tp_formula_table <- function() {
@@ -937,16 +946,12 @@ build_tp_formula_table <- function() {
         if (nrow(mono) < 1L) {
             stop(sprintf("no monoisotopic adduct for TP '%s'", notation), call. = FALSE)
         }
-        note <- if (notation %in% names(.tp_formula_notes)) {
-            unname(.tp_formula_notes[[notation]])
-        } else {
-            NA_character_
-        }
+        note <- tp_catalog$note[[i]]
         stats::setNames(
             list(
                 tp_catalog$name[[i]],
                 notation,
-                unname(.tp_general_formulas[[notation]]),
+                tp_catalog$general_formula[[i]],
                 parents$Parent_Formula[[1]],
                 mols$Molecule_Formula[[1]],
                 "[M-H]-",
