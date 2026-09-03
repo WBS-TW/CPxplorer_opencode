@@ -1270,16 +1270,15 @@ build_skyline_transition_list <- function(CP_allions, mode, quant_ion, ms_resolu
 
     if (mode == "advanced") {
         skyline_data <- CP_allions |>
-            dplyr::mutate(`Molecule List Name` = dplyr::case_when(
-                Compound_Class == "PCA" & TP == "None" ~ paste0("PCA-C", stringr::str_extract(Molecule_Formula, "(?<=C)\\d+(?=H)")),
-                Compound_Class == "PCA" & TP != "None" ~ paste0("PCA-C", stringr::str_extract(Molecule_Formula, "(?<=C)\\d+(?=H)"), "_", TP),
-                Compound_Class == "PCO" & TP == "None" ~ paste0("PCO-C", stringr::str_extract(Molecule_Formula, "(?<=C)\\d+(?=H)")),
-                Compound_Class == "PCO" & TP != "None" ~ paste0("PCO-C", stringr::str_extract(Molecule_Formula, "(?<=C)\\d+(?=H)"), "_", TP),
-                Compound_Class == "BCA" & TP == "None" ~ paste0("BCA-C", stringr::str_extract(Molecule_Formula, "(?<=C)\\d+(?=H)")),
-                Compound_Class == "BCA" & TP != "None" ~ paste0("BCA-C", stringr::str_extract(Molecule_Formula, "(?<=C)\\d+(?=H)"), "_", TP),
-                stringr::str_detect(Compound_Class, "^IS$") == TRUE ~ Compound_Class,
-                stringr::str_detect(Compound_Class, "^RS$") == TRUE ~ Compound_Class
-            )) |>
+            dplyr::mutate(`Molecule List Name` = {
+                parent_c <- stringr::str_extract(Parent_Formula, "(?<=C)\\d+(?=H)")
+                dplyr::case_when(
+                    stringr::str_detect(Compound_Class, "^IS$") ~ Compound_Class,
+                    stringr::str_detect(Compound_Class, "^RS$") ~ Compound_Class,
+                    TP == "None" ~ paste0(Compound_Class, "-C", parent_c),
+                    TRUE ~ paste0(Compound_Class, "-C", parent_c, "_", TP)
+                )
+            }) |>
             dplyr::rename(`Molecule Name` = Molecule_Formula) |>
             dplyr::mutate(`Precursor m/z` = `m/z`) |>
             dplyr::rename(`Precursor Charge` = Charge) |>

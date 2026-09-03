@@ -179,3 +179,24 @@ test_that("TP formula table covers the catalog with Excel example formulas", {
     expect_identical(br[["Example parent formula"]], "C10H16Cl4Br2")
     expect_identical(br[["Example molecule formula"]], "C10H17Cl4BrO")
 })
+
+test_that("Skyline list name uses parent carbon for TPs that add carbon", {
+    ions <- CPxplorer:::getAdduct_advanced(
+        "PCA", "+Cl", "-H+C6H10O7", "-", 10:10, 6:6, 6L, 0:0, 0L, 5L
+    )
+    sky <- CPxplorer:::build_skyline_transition_list(
+        ions, mode = "advanced", quant_ion = "Most intense"
+    )
+    expect_true(all(sky[["Molecule List Name"]] == "PCA-C10_-H+C6H10O7"))
+    expect_false(any(grepl("PCA-C16", sky[["Molecule List Name"]])))
+})
+
+test_that("Skyline list name supports PCdiO", {
+    ions <- CPxplorer:::getAdduct_advanced(
+        "PCdiO", "+Cl", "None", "-", 10:10, 6:6, 6L, 0:0, 0L, 5L
+    )
+    sky <- CPxplorer:::build_skyline_transition_list(
+        ions, mode = "advanced", quant_ion = "Most intense"
+    )
+    expect_true(all(sky[["Molecule List Name"]] == "PCdiO-C10"))
+})
