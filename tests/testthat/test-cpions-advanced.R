@@ -74,3 +74,57 @@ test_that("parent_h uses class-specific hydrogen counts", {
 test_that("parent_class_row errors on unknown class", {
     expect_error(CPxplorer:::parent_h("UNKNOWN", 10L, 6L, 0L), "unknown compound class")
 })
+
+test_that("apply_tp_to_parents yields Excel example formulas for PCA C10H16Cl6", {
+    parents <- CPxplorer:::build_parent_grid("PCA", 10L, 6L, 6L, 0L, 0L)
+    expect_identical(parents$Parent_Formula, "C10H16Cl6")
+    mol <- function(tp) {
+        CPxplorer:::apply_tp_to_parents(parents, tp)$Molecule_Formula
+    }
+    expect_identical(mol("None"), "C10H16Cl6")
+    expect_identical(mol("-Cl+OH"), "C10H17Cl5O")
+    expect_identical(mol("-H+OH"), "C10H16Cl6O")
+    expect_identical(mol("-2Cl+2OH"), "C10H18Cl4O2")
+    expect_identical(mol("-2H+2OH"), "C10H16Cl6O2")
+    expect_identical(mol("-2H+O"), "C10H14Cl6O")
+    expect_identical(mol("-H+SO4H"), "C10H16Cl6O4S")
+    expect_identical(mol("-H+C6H10O7"), "C16H25Cl6O7")
+    expect_identical(mol("-2H+2O"), "C10H14Cl6O2")
+    expect_identical(mol("-H+OCH3"), "C11H18Cl6O")
+    expect_identical(mol("-Cl+OCH3"), "C11H19Cl5O")
+    expect_identical(mol("-4H+2O"), "C10H12Cl6O2")
+})
+
+test_that("Br TPs apply on BCA and are rejected on PCA", {
+    bca <- CPxplorer:::build_parent_grid("BCA", 10L, 4L, 4L, 2L, 2L)
+    expect_identical(bca$Parent_Formula, "C10H16Cl4Br2")
+    expect_identical(
+        CPxplorer:::apply_tp_to_parents(bca, "-Br+OH")$Molecule_Formula,
+        "C10H17Cl4BrO"
+    )
+    expect_match(
+        CPxplorer:::tp_feasibility_error("PCA", "-Br+OH", 10L, 6L, 6L, 0L, 0L),
+        "Br"
+    )
+    expect_match(
+        CPxplorer:::tp_feasibility_error(c("PCA", "BCA"), "-Br+OH", 10L, 4L, 4L, 2L, 2L),
+        "Br"
+    )
+    expect_null(
+        CPxplorer:::tp_feasibility_error("BCA", "-Br+OH", 10L, 4L, 4L, 2L, 2L)
+    )
+})
+
+test_that("infeasible Cl range blocks and partial range keeps valid rows", {
+    expect_match(
+        CPxplorer:::tp_feasibility_error("PCA", "-2Cl+2OH", 10L, 1L, 1L, 0L, 0L),
+        "-2Cl\\+2OH"
+    )
+    expect_null(
+        CPxplorer:::tp_feasibility_error("PCA", "-2Cl+2OH", 10L, 1L, 4L, 0L, 0L)
+    )
+    parents <- CPxplorer:::build_parent_grid("PCA", 10L, 1:4, 4L, 0L, 0L)
+    out <- CPxplorer:::apply_tp_to_parents(parents, "-2Cl+2OH")
+    expect_true(all(out$Cl >= 0L))
+    expect_equal(nrow(out), 3L)
+})

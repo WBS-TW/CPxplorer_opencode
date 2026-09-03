@@ -23,12 +23,12 @@ create_formula <- function(C, H, Cl, Br, S, O, F) {
         dplyr::case_when(Br < 1 ~ paste0(""),
                   Br == 1 ~ paste0("Br"),
                   Br > 1  ~ paste0("Br", Br)),
-        dplyr::case_when(S < 1 ~ paste0(""),
-                  S == 1 ~ paste0("S"),
-                  S > 1  ~ paste0("S", S)),
         dplyr::case_when(O < 1 ~ paste0(""),
                   O == 1 ~ paste0("O"),
                   O > 1  ~ paste0("O", O)),
+        dplyr::case_when(S < 1 ~ paste0(""),
+                  S == 1 ~ paste0("S"),
+                  S > 1  ~ paste0("S", S)),
         dplyr::case_when(F < 1 ~ paste0(""),
                          F == 1 ~ paste0("F"),
                          F > 1  ~ paste0("F", F))
@@ -146,6 +146,88 @@ parent_class_row <- function(class) {
 parent_h <- function(class, C, Cl, Br = 0L) {
     row <- parent_class_row(class)
     as.integer(2L * C + row$h_offset - Cl - if (row$has_br) Br else 0L)
+}
+
+build_parent_grid <- function(class, C, Cl, Clmax, Br, Brmax) {
+    row <- parent_class_row(class)
+    if (isTRUE(row$has_br)) {
+        data <- tidyr::crossing(C, Cl, Br) |>
+            dplyr::filter(C >= Cl) |>
+            dplyr::filter(Cl <= Clmax) |>
+            dplyr::filter(Br <= Brmax) |>
+            dplyr::filter(Br + Cl <= C)
+    } else {
+        data <- tidyr::crossing(C, Cl) |>
+            dplyr::filter(C >= Cl) |>
+            dplyr::filter(Cl <= Clmax) |>
+            dplyr::mutate(Br = 0L)
+    }
+    data |>
+        dplyr::mutate(
+            H = parent_h(class, C, Cl, Br),
+            S = 0L,
+            O = 0L,
+            `F` = 0L,
+            Parent_Formula = create_formula(C, H, Cl, Br, S, O, `F`)
+        ) |>
+        dplyr::select(C, H, Cl, Br, S, O, `F`, Parent_Formula)
+}
+
+apply_tp_to_parents <- function(parents, notation) {
+    delta <- parse_tp_notation(notation)
+    parents |>
+        dplyr::mutate(
+            C = C + delta[["C"]],
+            H = H + delta[["H"]],
+            Cl = Cl + delta[["Cl"]],
+            Br = Br + delta[["Br"]],
+            S = S + delta[["S"]],
+            O = O + delta[["O"]],
+            `F` = `F` + delta[["F"]],
+            TP = notation,
+            Molecule_Formula = create_formula(C, H, Cl, Br, S, O, `F`)
+        ) |>
+        dplyr::filter(
+            C >= 0L, H >= 0L, Cl >= 0L, Br >= 0L, S >= 0L, O >= 0L, `F` >= 0L
+        )
+}
+
+tp_feasibility_error <- function(classes, notations, C, Cl, Clmax, Br, Brmax) {
+    for (notation in notations) {
+        parsed <- tryCatch(
+            parse_tp_notation(notation),
+            error = function(e) e
+        )
+        if (inherits(parsed, "error")) {
+            return(conditionMessage(parsed))
+        }
+        if (parsed[["Br"]] < 0L) {
+            for (class in classes) {
+                row <- parent_class_row(class)
+                if (!isTRUE(row$has_br)) {
+                    return(sprintf(
+                        "TP '%s' requires Br but class '%s' has no Br",
+                        notation,
+                        class
+                    ))
+                }
+            }
+        }
+        cl_vals <- as.integer(min(Cl):Clmax)
+        br_vals <- as.integer(min(Br):Brmax)
+        for (class in classes) {
+            parents <- build_parent_grid(class, C, cl_vals, Clmax, br_vals, Brmax)
+            out <- apply_tp_to_parents(parents, notation)
+            if (nrow(out) == 0L) {
+                return(sprintf(
+                    "TP '%s' is infeasible for class '%s' over the selected range",
+                    notation,
+                    class
+                ))
+            }
+        }
+    }
+    NULL
 }
 
 #############################################################################
