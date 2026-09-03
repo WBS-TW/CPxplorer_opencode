@@ -146,3 +146,23 @@ test_that("BCA -Cl+OH decrements chlorine on the molecule formula", {
     expect_true(all(actual$Parent_Formula == "C10H16Cl4Br2"))
     expect_true(all(actual$TP == "-Cl+OH"))
 })
+
+test_that("getAdduct_advanced supports PCdiO, PCtriO, and new TPs", {
+    pca_gluc <- CPxplorer:::getAdduct_advanced(
+        "PCA", "+Cl", "-H+C6H10O7", "-", 10:10, 6:6, 6L, 0:0, 0L, 5L
+    )
+    expect_true(all(pca_gluc$Molecule_Formula == "C16H25Cl6O7"))
+    expect_true(all(pca_gluc$Parent_Formula == "C10H16Cl6"))
+
+    pcdio <- CPxplorer:::getAdduct_advanced(
+        "PCdiO", "+Cl", "None", "-", 10:10, 6:6, 6L, 0:0, 0L, 5L
+    )
+    expect_true(all(pcdio$Molecule_Formula == "C10H12Cl6"))
+    expect_true(all(pcdio$Compound_Class == "PCdiO"))
+
+    pctrio <- CPxplorer:::getAdduct_advanced(
+        "PCtriO", "+Cl", "-H+OH", "-", 10:10, 6:6, 6L, 0:0, 0L, 5L
+    )
+    expect_true(all(pctrio$Molecule_Formula == "C10H10Cl6O"))
+    expect_true(all(pctrio$Compound_Class == "PCtriO"))
+})
