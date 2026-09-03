@@ -49,3 +49,28 @@ test_that("parse_tp_notation rejects bad grammar", {
     expect_error(CPxplorer:::parse_tp_notation("H+OH"), "sign")
     expect_error(CPxplorer:::parse_tp_notation(""), "empty")
 })
+
+test_that("tp_catalog lists predefined notations with None first", {
+    notations <- CPxplorer:::tp_catalog_notations()
+    expect_identical(notations[1], "None")
+    expect_true(all(c(
+        "-Cl+OH", "-H+OH", "-2Cl+2OH", "-2H+2OH", "-2H+O", "-H+SO4H",
+        "-H+C6H10O7", "-2H+2O", "-Br+OH", "-2Br+2OH", "-H+OCH3",
+        "-Cl+OCH3", "-4H+2O"
+    ) %in% notations))
+    for (notation in setdiff(notations, "None")) {
+        expect_silent(CPxplorer:::parse_tp_notation(notation))
+    }
+})
+
+test_that("parent_h uses class-specific hydrogen counts", {
+    expect_identical(CPxplorer:::parent_h("PCA", 10L, 6L, 0L), 16L)
+    expect_identical(CPxplorer:::parent_h("PCO", 10L, 6L, 0L), 14L)
+    expect_identical(CPxplorer:::parent_h("PCdiO", 10L, 6L, 0L), 12L)
+    expect_identical(CPxplorer:::parent_h("PCtriO", 10L, 6L, 0L), 10L)
+    expect_identical(CPxplorer:::parent_h("BCA", 10L, 4L, 2L), 16L)
+})
+
+test_that("parent_class_row errors on unknown class", {
+    expect_error(CPxplorer:::parent_h("UNKNOWN", 10L, 6L, 0L), "unknown compound class")
+})

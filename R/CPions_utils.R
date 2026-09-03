@@ -104,6 +104,50 @@ parse_tp_list <- function(text) {
     parts
 }
 
+tp_catalog <- tibble::tribble(
+    ~notation,       ~name,
+    "None",          "None",
+    "-Cl+OH",        "Cl-hydroxylation",
+    "-H+OH",         "H-hydroxylation",
+    "-2Cl+2OH",      "Double Cl-hydroxylation",
+    "-2H+2OH",       "Double H-hydroxylation",
+    "-2H+O",         "Oxidation (ketone/aldehyde)",
+    "-H+SO4H",       "Sulfonation",
+    "-H+C6H10O7",    "Glucuronidation",
+    "-2H+2O",        "Carboxylic acid / omega-oxidation",
+    "-Br+OH",        "Br-hydroxylation",
+    "-2Br+2OH",      "Double Br-hydroxylation",
+    "-H+OCH3",       "Methoxylation",
+    "-Cl+OCH3",      "Cl-methoxylation",
+    "-4H+2O",        "Diketone"
+)
+
+tp_catalog_notations <- function() {
+    tp_catalog$notation
+}
+
+parent_class_catalog <- tibble::tribble(
+    ~class,    ~h_offset, ~has_br, ~advanced_only,
+    "PCA",      2L,        FALSE,   FALSE,
+    "PCO",      0L,        FALSE,   FALSE,
+    "PCdiO",   -2L,        FALSE,   TRUE,
+    "PCtriO",  -4L,        FALSE,   TRUE,
+    "BCA",      2L,        TRUE,    FALSE
+)
+
+parent_class_row <- function(class) {
+    row <- parent_class_catalog[parent_class_catalog$class == class, , drop = FALSE]
+    if (nrow(row) != 1L) {
+        stop(sprintf("unknown compound class '%s'", class), call. = FALSE)
+    }
+    row
+}
+
+parent_h <- function(class, C, Cl, Br = 0L) {
+    row <- parent_class_row(class)
+    as.integer(2L * C + row$h_offset - Cl - if (row$has_br) Br else 0L)
+}
+
 #############################################################################
 
 
