@@ -128,3 +128,21 @@ test_that("infeasible Cl range blocks and partial range keeps valid rows", {
     expect_true(all(out$Cl >= 0L))
     expect_equal(nrow(out), 3L)
 })
+
+test_that("BCA -Cl+OH decrements chlorine on the molecule formula", {
+    actual <- CPxplorer:::getAdduct_advanced(
+        Class = "BCA",
+        Adduct_Ion = "+Cl",
+        TP = "-Cl+OH",
+        Charge = "-",
+        C = 10:10,
+        Cl = 4:4,
+        Clmax = 4L,
+        Br = 2:2,
+        Brmax = 2L,
+        threshold = 5L
+    )
+    expect_true(all(actual$Molecule_Formula == "C10H17Cl3Br2O"))
+    expect_true(all(actual$Parent_Formula == "C10H16Cl4Br2"))
+    expect_true(all(actual$TP == "-Cl+OH"))
+})

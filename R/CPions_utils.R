@@ -404,6 +404,9 @@ generateInput_Envipat_BCA <- function(data = data, group = group, adduct_ions = 
 generateInput_Envipat_advanced <- function(data = data, Class = Class, Adduct_Ion = Adduct_Ion,
                                            TP = TP, Charge = Charge) {
 
+    if (!"O" %in% names(data)) data$O <- 0
+    if (!"S" %in% names(data)) data$S <- 0
+    if (!"F" %in% names(data)) data$`F` <- 0
 
     data <- data |>
         dplyr::mutate(Adduct_Ion = Adduct_Ion) |>
@@ -434,21 +437,9 @@ generateInput_Envipat_advanced <- function(data = data, Class = Class, Adduct_Io
             Adduct_Ion == "-Cl-4HCl" ~ H-4,
             Adduct_Ion == "-2Cl-HCl" ~ H-1,
             .default = H)) |>
-        dplyr::mutate(Br = ifelse(Compound_Class == "BCA", Br, 0)) |>
+        dplyr::mutate(Br = ifelse(is.na(Br), 0, Br)) |>
         dplyr::mutate(Br = ifelse(Adduct_Ion == "+Br", Br+1, Br)) |>
         dplyr::mutate(`F` = ifelse(Adduct_Ion == "+F", `F`+1, `F`)) |>
-        dplyr::mutate(O = dplyr::case_when(
-            TP == "-H+OH" ~ 1,
-            TP == "-2H+2OH" ~ 2,
-            TP == "-H+SO4H" ~ 4,
-            TP == "-Cl+OH" ~ 1,
-            TP == "-2Cl+2OH" ~ 2,
-            TP == "-2H+O" ~ 1,
-            .default = 0
-        )) |>
-        dplyr::mutate(S = dplyr::case_when(
-            TP == "-H+SO4H" ~ 1,
-            .default = 0)) |>
         dplyr::mutate(Adduct_Formula = create_formula(C, H, Cl, Br, S, O, `F`))|>
         dplyr::rowwise() |>
         dplyr::mutate(Halo_perc = calculate_haloperc(Molecule_Formula)) |>
@@ -758,84 +749,14 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
     # group <- stringr::str_extract(adduct_ions, "(?<=\\[)[A-Za-z]+(?=[+-])") # Using positive lookbehind precedes a [ ; matches on or more letters ; positive lookahead of either + or -
     #
 
-    if (Class == "PCA") {
-        data <- crossing(C, Cl) |> #set combinations of C and Cl
-            dplyr::filter(C >= Cl) |> # filter so Cl dont exceed C atoms
-            dplyr::filter(Cl <= Clmax) |> # limit chlorine atoms.
-            dplyr::mutate(Parent_Formula = paste0("C", C, "H", 2*C+2-Cl, "Cl", Cl)) |>
-            dplyr::mutate(H = dplyr::case_when(# add H atoms
-                TP == "None" ~ 2*C+2-Cl, #PCA general formula 2*C+2-Cl
-                TP == "-H+OH" ~ 2*C+2-Cl, #no net change of H
-                TP == "-2H+2OH" ~ 2*C+2-Cl,
-                TP == "-Cl+OH" ~ 2*C+2-Cl+1,
-                TP == "-2Cl+2OH" ~ 2*C+2-Cl+2,
-                TP == "-2H+O" ~ 2*C-Cl,
-                TP == "-H+SO4H" ~ 2*C+2-Cl))  |>
-            dplyr::mutate(Cl = dplyr::case_when(
-                TP == "-Cl+OH" ~ Cl-1,
-                TP == "-2Cl+2OH" ~ Cl-2,
-                .default = Cl)) |>
-            dplyr::mutate(Molecule_Formula = paste0("C", C, "H", H, "Cl", Cl)) |>
-            dplyr::mutate(Molecule_Formula = case_when(
-                TP == "None" ~ paste0("C", C, "H", H, "Cl", Cl),
-                TP == "-H+OH" ~ paste0("C", C, "H", H, "Cl", Cl, "O"),
-                TP == "-2H+2OH" ~ paste0("C", C, "H", H, "Cl", Cl, "O2"),
-                TP == "-Cl+OH" ~ paste0("C", C, "H", H, "Cl", Cl, "O"),
-                TP == "-2Cl+2OH" ~ paste0("C", C, "H", H, "Cl", Cl, "O2"),
-                TP == "-2H+O" ~ paste0("C", C, "H", H, "Cl", Cl,"O"),
-                TP == "-H+SO4H" ~ paste0("C", C, "H", H, "Cl", Cl, "SO4")))
-
-    } else if (Class == "PCO") {
-        data <- crossing(C, Cl) |>
-            dplyr::filter(C >= Cl) |>
-            dplyr::filter(Cl <= Clmax) |>
-            dplyr::mutate(Parent_Formula = paste0("C", C, "H", 2*C-Cl, "Cl", Cl)) |>
-            dplyr::mutate(H = dplyr::case_when(# add H atoms.
-                TP == "None" ~ 2*C-Cl, #PCO general formula 2*C-Cl
-                TP == "-H+OH" ~ 2*C-Cl,
-                TP == "-2H+2OH" ~ 2*C-Cl,
-                TP == "-Cl+OH" ~ 2*C-Cl+1,
-                TP == "-2Cl+2OH" ~ 2*C-Cl+2,
-                TP == "-2H+O" ~ 2*C-Cl-2,
-                TP == "-H+SO4H" ~ 2*C-Cl))  |>
-            dplyr::mutate(Cl = dplyr::case_when(
-                TP == "-Cl+OH" ~ Cl-1,
-                TP == "-2Cl+2OH" ~ Cl-2,
-                .default = Cl)) |>
-            dplyr::mutate(Molecule_Formula = paste0("C", C, "H", H, "Cl", Cl)) |>
-            dplyr::mutate(Molecule_Formula = dplyr::case_when( #DOUBLE CHECK THE FORMULA IS CORRECT!!!!!
-                TP == "None" ~ paste0("C", C, "H", H, "Cl", Cl),
-                TP == "-H+OH" ~ paste0("C", C, "H", H, "Cl", Cl, "O"),
-                TP == "-2H+2OH" ~ paste0("C", C, "H", H, "Cl", Cl, "O2"),
-                TP == "-Cl+OH" ~ paste0("C", C, "H", H, "Cl", Cl, "O"),
-                TP == "-2Cl+2OH" ~ paste0("C", C, "H", H, "Cl", Cl, "O2"),
-                TP == "-2H+O" ~ paste0("C", C, "H", H, "Cl", Cl,"O"),
-                TP == "-H+SO4H" ~ paste0("C", C, "H", H, "Cl", Cl, "SO4")))
-
-    } else if (Class == "BCA") {
-        data <- tidyr::crossing(C, Cl, Br) |>  #get combinations of C, Cl, Br
-            dplyr::filter(C >= Cl) |>  # filter so Cl dont exceed C atoms
-            dplyr::filter(Cl <= Clmax) |>  # limit chlorine atoms.
-            dplyr::filter(Br <= Brmax) |>
-            dplyr::filter(Br + Cl <= C) |>
-            dplyr::mutate(Parent_Formula = paste0("C", C, "H", 2*C+2-Cl-Br, "Cl", Cl, "Br", Br)) |>
-            dplyr::mutate(H = dplyr::case_when(# add H atoms.
-                TP == "None" ~ 2*C+2-Cl-Br, #BCA general formula
-                TP == "-H+OH" ~ 2*C+2-Cl-Br,
-                TP == "-2H+2OH" ~ 2*C+2-Cl-Br,
-                TP == "-Cl+OH" ~ 2*C+2-Cl-Br+1,
-                TP == "-2Cl+2OH" ~ 2*C+2-Cl-Br+2,
-                TP == "-2H+O" ~ 2*C-Cl-Br,
-                TP == "-H+SO4H" ~ 2*C+2-Cl-Br))  |>
-            dplyr::mutate(Molecule_Formula = dplyr::case_when( #DOUBLE CHECK THE FORMULA IS CORRECT!!!!!
-                TP == "None" ~ paste0("C", C, "H", H, "Cl", Cl, "Br", Br),
-                TP == "-H+OH" ~ paste0("C", C, "H", H, "Cl", Cl, "Br", Br, "O"),
-                TP == "-2H+2OH" ~ paste0("C", C, "H", H, "Cl", Cl, "Br", Br, "O2"),
-                TP == "-Cl+OH" ~ paste0("C", C, "H", H, "Cl", Cl, "Br", Br, "O"),
-                TP == "-2Cl+2OH" ~ paste0("C", C, "H", H, "Cl", Cl, "Br", Br, "O2"),
-                TP == "-2H+O" ~ paste0("C", C, "H", H, "Cl", Cl, "Br", Br, "O"),
-                TP == "-H+SO4H" ~ paste0("C", C, "H", H, "Cl", Cl, "Br", Br, "SO4")))
+    err <- tp_feasibility_error(Class, TP, C, Cl, Clmax, Br, Brmax)
+    if (!is.null(err)) {
+        stop(err, call. = FALSE)
     }
+    data <- apply_tp_to_parents(
+        build_parent_grid(Class, C, Cl, Clmax, Br, Brmax),
+        TP
+    )
 
 
 
@@ -855,6 +776,9 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
     # Remove formula without Cl after adduct formations
     data <- data |>
         dplyr::filter(Cl > 0)
+    if (nrow(data) == 0) {
+        stop("TP plus adduct leaves no Cl", call. = FALSE)
+    }
 
     # Create empty list for all ion formulas
     CP_allions <- list()
