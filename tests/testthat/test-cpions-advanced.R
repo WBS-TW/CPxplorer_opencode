@@ -166,3 +166,16 @@ test_that("getAdduct_advanced supports PCdiO, PCtriO, and new TPs", {
     expect_true(all(pctrio$Molecule_Formula == "C10H10Cl6O"))
     expect_true(all(pctrio$Compound_Class == "PCtriO"))
 })
+
+test_that("TP formula table covers the catalog with Excel example formulas", {
+    tbl <- CPxplorer:::build_tp_formula_table()
+    expect_identical(tbl[["Transformation product"]], CPxplorer:::tp_catalog_notations())
+    pca_none <- tbl[tbl[["Transformation product"]] == "None", ]
+    expect_identical(pca_none[["Example parent formula"]], "C10H16Cl6")
+    expect_identical(pca_none[["Example molecule formula"]], "C10H16Cl6")
+    gluc <- tbl[tbl[["Transformation product"]] == "-H+C6H10O7", ]
+    expect_identical(gluc[["Example molecule formula"]], "C16H25Cl6O7")
+    br <- tbl[tbl[["Transformation product"]] == "-Br+OH", ]
+    expect_identical(br[["Example parent formula"]], "C10H16Cl4Br2")
+    expect_identical(br[["Example molecule formula"]], "C10H17Cl4BrO")
+})

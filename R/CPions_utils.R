@@ -860,6 +860,103 @@ getAdduct_advanced <- function(Class, Adduct_Ion, TP, Charge, C, Cl, Clmax, Br, 
 
 }
 
+.tp_general_formulas <- c(
+    "None" = "CxH2x+2-yCly",
+    "-Cl+OH" = "CxH2x+2-y+1Cly-1O",
+    "-H+OH" = "CxH2x+2-yClyO",
+    "-2Cl+2OH" = "CxH2x+2-y+2Cly-2O2",
+    "-2H+2OH" = "CxH2x+2-yClyO2",
+    "-2H+O" = "CxH2x+2-y-2ClyO",
+    "-H+SO4H" = "CxH2x+2-yClyO4S",
+    "-H+C6H10O7" = "Cx+6H2x+2-y+9ClyO7",
+    "-2H+2O" = "CxH2x+2-y-2ClyO2",
+    "-Br+OH" = "CxH2x+2-y-z+1ClyBrz-1O",
+    "-2Br+2OH" = "CxH2x+2-y-z+2ClyBrz-2O2",
+    "-H+OCH3" = "Cx+1H2x+2-y+2ClyO",
+    "-Cl+OCH3" = "Cx+1H2x+2-y+3Cly-1O",
+    "-4H+2O" = "CxH2x+2-y-4ClyO2"
+)
+
+.tp_formula_notes <- c(
+    "-Cl+OH" = "Give exact same chemical formula as -H+OH with one less Cl (here, C10H17Cl5)",
+    "-H+OH" = "Give exact same chemical formula as -Cl+OH with one more Cl"
+)
+
+.tp_formula_mz_col <- "Example adduct ion mz (calculated exact mass of the monoisotopic adduct ion of the transformation product Use: www.envipat.eawag.ch"
+
+build_tp_formula_table <- function() {
+    rows <- lapply(seq_len(nrow(tp_catalog)), function(i) {
+        notation <- tp_catalog$notation[[i]]
+        is_br_tp <- parse_tp_notation(notation)[["Br"]] < 0L
+        if (is_br_tp) {
+            class <- "BCA"
+            C <- 10L
+            Cl <- 4L
+            Clmax <- 4L
+            Br <- 2L
+            Brmax <- 2L
+        } else {
+            class <- "PCA"
+            C <- 10L
+            Cl <- 6L
+            Clmax <- 6L
+            Br <- 0L
+            Brmax <- 0L
+        }
+        parents <- build_parent_grid(class, C, Cl, Clmax, Br, Brmax)
+        mols <- apply_tp_to_parents(parents, notation)
+        adducts <- getAdduct_advanced(
+            Class = class,
+            Adduct_Ion = "-H",
+            TP = notation,
+            Charge = "-",
+            C = C:C,
+            Cl = Cl:Cl,
+            Clmax = Clmax,
+            Br = Br:Br,
+            Brmax = Brmax,
+            threshold = 5
+        )
+        mono <- adducts[adducts$Isotopologue == "", , drop = FALSE]
+        if (nrow(mono) < 1L) {
+            stop(sprintf("no monoisotopic adduct for TP '%s'", notation), call. = FALSE)
+        }
+        note <- if (notation %in% names(.tp_formula_notes)) {
+            unname(.tp_formula_notes[[notation]])
+        } else {
+            NA_character_
+        }
+        stats::setNames(
+            list(
+                tp_catalog$name[[i]],
+                notation,
+                unname(.tp_general_formulas[[notation]]),
+                parents$Parent_Formula[[1]],
+                mols$Molecule_Formula[[1]],
+                "[M-H]-",
+                round(mono[["m/z"]][[1]], 4),
+                note
+            ),
+            c(
+                "Name of TP",
+                "Transformation product",
+                "General formula",
+                "Example parent formula",
+                "Example molecule formula",
+                "Example adduct ion",
+                .tp_formula_mz_col,
+                "Note"
+            )
+        ) |>
+            tibble::as_tibble()
+    })
+    dplyr::bind_rows(rows)
+}
+
+write_tp_formula_xlsx <- function(path = "inst/CPions_TP_formula.xlsx") {
+    openxlsx::write.xlsx(build_tp_formula_table(), path, overwrite = TRUE)
+}
+
 ########################################################################
 
 compute_interference <- function(CP_allions, ms_resolution) {
