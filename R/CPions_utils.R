@@ -37,6 +37,73 @@ create_formula <- function(C, H, Cl, Br, S, O, F) {
     stringr::str_trim(formula)
 }
 
+empty_tp_delta <- function() {
+    c(C = 0L, H = 0L, Cl = 0L, Br = 0L, O = 0L, S = 0L, F = 0L)
+}
+
+.tp_group_atoms <- list(
+    H = c(C = 0L, H = 1L, Cl = 0L, Br = 0L, O = 0L, S = 0L, F = 0L),
+    Cl = c(C = 0L, H = 0L, Cl = 1L, Br = 0L, O = 0L, S = 0L, F = 0L),
+    Br = c(C = 0L, H = 0L, Cl = 0L, Br = 1L, O = 0L, S = 0L, F = 0L),
+    OH = c(C = 0L, H = 1L, Cl = 0L, Br = 0L, O = 1L, S = 0L, F = 0L),
+    O = c(C = 0L, H = 0L, Cl = 0L, Br = 0L, O = 1L, S = 0L, F = 0L),
+    SO4H = c(C = 0L, H = 1L, Cl = 0L, Br = 0L, O = 4L, S = 1L, F = 0L),
+    OCH3 = c(C = 1L, H = 3L, Cl = 0L, Br = 0L, O = 1L, S = 0L, F = 0L),
+    C6H10O7 = c(C = 6L, H = 10L, Cl = 0L, Br = 0L, O = 7L, S = 0L, F = 0L)
+)
+
+parse_tp_notation <- function(notation) {
+    notation <- stringr::str_trim(as.character(notation))
+    if (length(notation) != 1L || is.na(notation) || notation == "") {
+        stop("empty TP notation", call. = FALSE)
+    }
+    if (identical(notation, "None")) {
+        return(empty_tp_delta())
+    }
+    if (!substr(notation, 1, 1) %in% c("+", "-")) {
+        stop(sprintf("invalid TP notation '%s': missing sign", notation), call. = FALSE)
+    }
+    token_re <- "([+-])(\\d+)?(C6H10O7|SO4H|OCH3|OH|Cl|Br|O|H)"
+    matches <- gregexpr(token_re, notation, perl = TRUE)[[1]]
+    if (matches[1] == -1L) {
+        stop(sprintf("invalid TP notation '%s': missing sign", notation), call. = FALSE)
+    }
+    consumed <- sum(attr(matches, "match.length"))
+    if (consumed != nchar(notation)) {
+        stop(sprintf("invalid TP notation '%s'", notation), call. = FALSE)
+    }
+    delta <- empty_tp_delta()
+    starts <- as.integer(matches)
+    lens <- attr(matches, "match.length")
+    for (i in seq_along(starts)) {
+        token <- substr(notation, starts[i], starts[i] + lens[i] - 1L)
+        sign <- if (substr(token, 1, 1) == "-") -1L else 1L
+        rest <- substr(token, 2L, nchar(token))
+        coef <- 1L
+        coef_match <- regexpr("^\\d+", rest, perl = TRUE)
+        if (coef_match == 1L) {
+            coef <- as.integer(regmatches(rest, coef_match))
+            rest <- substr(rest, attr(coef_match, "match.length") + 1L, nchar(rest))
+        }
+        group <- .tp_group_atoms[[rest]]
+        if (is.null(group)) {
+            stop(sprintf("unknown TP group '%s' in '%s'", rest, notation), call. = FALSE)
+        }
+        delta <- delta + sign * coef * group
+    }
+    delta
+}
+
+parse_tp_list <- function(text) {
+    text <- if (length(text) == 0L || is.na(text)) "" else as.character(text)
+    parts <- stringr::str_trim(unlist(strsplit(text, ";", fixed = TRUE)))
+    parts <- parts[parts != ""]
+    if (length(parts) == 0L) {
+        return("None")
+    }
+    parts
+}
+
 #############################################################################
 
 
