@@ -230,6 +230,22 @@ tp_feasibility_error <- function(classes, notations, C, Cl, Clmax, Br, Brmax) {
     NULL
 }
 
+resolve_advanced_tp_input <- function(custom, selected, text, classes, C, Cl, Clmax, Br, Brmax) {
+    notations <- if (isTRUE(custom)) {
+        parse_tp_list(text)
+    } else {
+        as.character(selected)
+    }
+    if (length(notations) == 0L) {
+        notations <- "None"
+    }
+    err <- tp_feasibility_error(classes, notations, C, Cl, Clmax, Br, Brmax)
+    if (!is.null(err)) {
+        stop(err, call. = FALSE)
+    }
+    notations
+}
+
 #############################################################################
 
 

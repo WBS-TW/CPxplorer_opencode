@@ -89,7 +89,7 @@ ui <- shiny::navbarPage(
                             shiny::numericInput("Brmax_adv", "Br atoms max (allowed 1-15)", value = 4, min = 1, max = 15),
                             shiny::br(),
                             shiny::selectInput("Compclass_adv", "Compound Class",
-                                        choices = c("PCA", "PCO","BCA"),
+                                        choices = c("PCA", "PCO", "PCdiO", "PCtriO", "BCA"),
                                         selected = "PCA",
                                         multiple = TRUE,
                                         selectize = TRUE,
@@ -109,13 +109,27 @@ ui <- shiny::navbarPage(
                                         selectize = TRUE,
                                         width = NULL,
                                         size = NULL),
-                            shiny::selectInput("TP_adv", "Transformation product",
-                                        choices = c("None", "-Cl+OH", "-2Cl+2OH", "-H+OH", "-2H+2OH", "-2H+O", "-H+SO4H"),
-                                        selected = "None",
-                                        multiple = TRUE,
-                                        selectize = TRUE,
-                                        width = NULL,
-                                        size = NULL),
+                            shiny::checkboxInput("TP_custom_adv", "Custom transformation product", value = FALSE),
+                            shiny::conditionalPanel(
+                                condition = "input.TP_custom_adv == true",
+                                shiny::textInput(
+                                    "TP_text_adv",
+                                    "Transformation products",
+                                    value = "",
+                                    placeholder = "-H+OH; -Cl+OH; -2H+2OH"
+                                )
+                            ),
+                            shiny::conditionalPanel(
+                                condition = "input.TP_custom_adv == false",
+                                shiny::selectInput(
+                                    "TP_adv",
+                                    "Transformation product",
+                                    choices = CPxplorer:::tp_catalog_notations(),
+                                    selected = "None",
+                                    multiple = TRUE,
+                                    selectize = TRUE
+                                )
+                            ),
                             shiny::numericInput("threshold_adv", "Isotope rel ab threshold (0-99%)", value = 5, min = 0, max = 99),
                             shiny::textAreaInput("ISRS_input_adv", "Optional: add ion formula for IS/RS",
                                                  placeholder = "Input the [M+adduct] ion formula. See Instructions" , height = "150px"),
@@ -285,7 +299,19 @@ CPions_server <- function(input, output, session) {
     selectedClass_adv <- shiny::eventReactive(input$go_adv, {as.character((input$Compclass_adv))})
     selectedAdducts_adv <- shiny::eventReactive(input$go_adv, {as.character(input$Adducts_adv)})
     selectedCharge_adv <- shiny::eventReactive(input$go_adv, {as.character((input$Charge_adv))})
-    selectedTP_adv <- shiny::eventReactive(input$go_adv, {as.character((input$TP_adv))})
+    selectedTP_adv <- shiny::eventReactive(input$go_adv, {
+        CPxplorer:::resolve_advanced_tp_input(
+            custom = isTRUE(input$TP_custom_adv),
+            selected = input$TP_adv,
+            text = input$TP_text_adv,
+            classes = as.character(input$Compclass_adv),
+            C = as.integer(input$Cmin_adv:input$Cmax_adv),
+            Cl = as.integer(input$Clmin_adv:input$Clmax_adv),
+            Clmax = as.integer(input$Clmax_adv),
+            Br = as.integer(input$Brmin_adv:input$Brmax_adv),
+            Brmax = as.integer(input$Brmax_adv)
+        )
+    })
 
     C_adv <- shiny::eventReactive(input$go_adv, {as.integer(input$Cmin_adv:input$Cmax_adv)})
     Cl_adv <- shiny::eventReactive(input$go_adv, {as.integer(input$Clmin_adv:input$Clmax_adv)})
@@ -371,7 +397,15 @@ CPions_server <- function(input, output, session) {
         Class <- as.character(selectedClass_adv())
         Adducts <- as.character(selectedAdducts_adv())
         Charge <- as.character(selectedCharge_adv())
-        TP <- as.character(selectedTP_adv())
+        notations <- tryCatch(
+            selectedTP_adv(),
+            error = function(e) e
+        )
+        shiny::validate(shiny::need(
+            !inherits(notations, "error"),
+            if (inherits(notations, "error")) notations$message else NULL
+        ))
+        TP <- as.character(notations)
 
         # function to get adducts or fragments
         CP_allions_template <- data.frame(Molecule_Formula = character(), Halo_perc = double())

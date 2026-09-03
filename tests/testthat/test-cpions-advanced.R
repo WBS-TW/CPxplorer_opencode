@@ -200,3 +200,34 @@ test_that("Skyline list name supports PCdiO", {
     )
     expect_true(all(sky[["Molecule List Name"]] == "PCdiO-C10"))
 })
+
+test_that("resolve_advanced_tp_input blocks bad custom text and Br on PCA", {
+    expect_error(
+        CPxplorer:::resolve_advanced_tp_input(
+            custom = TRUE, selected = "None", text = "-H+COOH",
+            classes = "PCA", C = 10L, Cl = 6L, Clmax = 6L, Br = 0L, Brmax = 0L
+        ),
+        "COOH"
+    )
+    expect_error(
+        CPxplorer:::resolve_advanced_tp_input(
+            custom = FALSE, selected = "-Br+OH", text = "",
+            classes = "PCA", C = 10L, Cl = 6L, Clmax = 6L, Br = 0L, Brmax = 0L
+        ),
+        "Br"
+    )
+    expect_identical(
+        CPxplorer:::resolve_advanced_tp_input(
+            custom = TRUE, selected = "None", text = " -H+OH ; -Cl+OH ",
+            classes = "PCA", C = 10L, Cl = 6L, Clmax = 6L, Br = 0L, Brmax = 0L
+        ),
+        c("-H+OH", "-Cl+OH")
+    )
+    expect_identical(
+        CPxplorer:::resolve_advanced_tp_input(
+            custom = FALSE, selected = c("None", "-H+OH"), text = "",
+            classes = "PCA", C = 10L, Cl = 6L, Clmax = 6L, Br = 0L, Brmax = 0L
+        ),
+        c("None", "-H+OH")
+    )
+})

@@ -28,6 +28,8 @@ test_that("CPions app tab flow renders expected outputs", {
             Compclass_adv = "PCA",
             Adducts_adv = "+Cl",
             Charge_adv = "-",
+            TP_custom_adv = FALSE,
+            TP_text_adv = "",
             TP_adv = "None",
             threshold_adv = 5,
             ISRS_input_adv = "",
