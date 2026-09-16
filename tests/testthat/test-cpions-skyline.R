@@ -167,3 +167,26 @@ test_that("Interference Skyline strategy falls back to least-interfering Quan io
     expect_equal(target_quan$`Original Rel_ab Rank`, 2L)
     expect_equal(target_quan$`Selected Reason`, "Least interference: all ions interfere")
 })
+
+test_that("Skyline export from unit-mass interference table uses integer precursor m/z", {
+    source_data <- dplyr::bind_rows(
+        CPxplorer:::getAdduct_normal("[PCA+Cl]-", 10:10, 3:3, 3L, 5L),
+        CPxplorer:::getAdduct_normal("[PCO+Cl]-", 10:10, 3:3, 3L, 5L)
+    )
+
+    unit_mass_ions <- source_data |>
+        CPxplorer:::apply_unit_mass_mz() |>
+        CPxplorer:::compute_interference(ms_resolution = .Machine$integer.max)
+
+    actual <- CPxplorer:::build_skyline_transition_list(
+        unit_mass_ions,
+        mode = "normal",
+        quant_ion = "Most intense",
+        ms_resolution = 20000L,
+        strategy = "balanced",
+        preferred_qual_n = 2L
+    )
+
+    expect_true(nrow(actual) > 0)
+    expect_true(all(actual$`Precursor m/z` == round(actual$`Precursor m/z`, 0)))
+})

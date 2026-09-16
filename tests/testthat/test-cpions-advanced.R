@@ -55,9 +55,10 @@ test_that("tp_catalog lists predefined notations with None first", {
     expect_identical(notations[1], "None")
     expect_true(all(c(
         "-Cl+OH", "-H+OH", "-2Cl+2OH", "-2H+2OH", "-2H+O", "-H+SO4H",
-        "-H+C6H10O7", "-2H+2O", "-Br+OH", "-2Br+2OH", "-H+OCH3",
+        "-H+C6H10O7", "-2H+2O", "-H+OCH3",
         "-Cl+OCH3", "-4H+2O"
     ) %in% notations))
+    expect_false(any(c("-Br+OH", "-2Br+2OH") %in% notations))
     for (notation in setdiff(notations, "None")) {
         expect_silent(CPxplorer:::parse_tp_notation(notation))
     }
@@ -209,9 +210,6 @@ test_that("TP formula table covers the catalog with Excel example formulas", {
     expect_identical(pca_none[["General formula"]], "CxH2x+2-yCly")
     gluc <- tbl[tbl[["Transformation product"]] == "-H+C6H10O7", ]
     expect_identical(gluc[["Example molecule formula"]], "C16H25Cl6O7")
-    br <- tbl[tbl[["Transformation product"]] == "-Br+OH", ]
-    expect_identical(br[["Example parent formula"]], "C10H16Cl4Br2")
-    expect_identical(br[["Example molecule formula"]], "C10H17Cl4BrO")
 })
 
 test_that("Skyline list name uses parent carbon for TPs that add carbon", {

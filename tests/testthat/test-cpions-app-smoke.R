@@ -39,11 +39,21 @@ test_that("CPions app tab flow renders expected outputs", {
         session$flushReact()
         expect_true(!is.null(output$Table_adv))
 
-        session$setInputs(MSresolution = 20000, interfere_mode = "normal", go2 = 1)
+        session$setInputs(
+            unit_mass_resolution = FALSE,
+            MSresolution = 20000,
+            interfere_mode = "normal",
+            go2 = 1
+        )
         session$flushReact()
         expect_true(!is.null(output$Plotly))
         expect_true(!is.null(output$Plotly2))
         expect_true(!is.null(output$Table2))
+
+        session$setInputs(unit_mass_resolution = TRUE, go2 = 2)
+        session$flushReact()
+        expect_true(!is.null(output$Table2))
+        expect_true(all(CP_allions_compl2()$`m/z` == round(CP_allions_compl2()$`m/z`, 0)))
 
         session$setInputs(
             QuantIon = "Interference-filtered",

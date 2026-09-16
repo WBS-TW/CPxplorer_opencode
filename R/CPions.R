@@ -145,7 +145,11 @@ ui <- shiny::navbarPage(
     shiny::tabPanel("Interfering ions",
                     shiny::fluidPage(shiny::sidebarLayout(
                         shiny::sidebarPanel(
-                            shiny::numericInput("MSresolution", "MS Resolution", value = 20000, min = 100, max = 5000000),
+                            shiny::checkboxInput("unit_mass_resolution", "Unit mass resolution", value = FALSE),
+                            shiny::conditionalPanel(
+                                condition = "!input.unit_mass_resolution",
+                                shiny::numericInput("MSresolution", "MS Resolution", value = 20000, min = 100, max = 5000000)
+                            ),
                             shiny::radioButtons("interfere_mode", label = "From Normal or Advanced settings", choices = c("normal", "advanced"), selected = "normal"),
                             shiny::actionButton("go2", "Calculate", width = "100%"),
                             width = 2
@@ -482,7 +486,12 @@ CPions_server <- function(input, output, session) {
         }
 
 
-        CP_allions_interfere <- compute_interference(CP_allions_interfere, MSresolution())
+        if (isTRUE(input$unit_mass_resolution)) {
+            CP_allions_interfere <- apply_unit_mass_mz(CP_allions_interfere)
+            CP_allions_interfere <- compute_interference(CP_allions_interfere, .Machine$integer.max)
+        } else {
+            CP_allions_interfere <- compute_interference(CP_allions_interfere, MSresolution())
+        }
 
         # populates CP_allions_compl2 so it can be use for skyline tab
         CP_allions_compl2(CP_allions_interfere)
@@ -629,19 +638,17 @@ if(input$skylineoutput == "mz"){ #Removed  skylineoutput==IonFormula since not c
 
     shiny::withProgress(message = "Generating transition list...", value = 0.5, {
 
-    if (input$QuantIon == "Most intense" & input$skyline_mode == "advanced") {
+    if (input$QuantIon == "Most intense") {
+        source_ions <- if (!is.null(CP_allions_compl2())) {
+            CP_allions_compl2()
+        } else if (input$skyline_mode == "advanced") {
+            CP_allions_glob_adv()
+        } else {
+            CP_allions_glob()
+        }
         CP_allions_skyline <- build_skyline_transition_list(
-            CP_allions = CP_allions_glob_adv(),
-            mode = "advanced",
-            quant_ion = "Most intense",
-            ms_resolution = input$MSresolution,
-            strategy = input$skyline_strategy,
-            preferred_qual_n = as.integer(input$skyline_qual_n)
-        )
-    } else if (input$QuantIon == "Most intense" & input$skyline_mode == "normal") {
-        CP_allions_skyline <- build_skyline_transition_list(
-            CP_allions = CP_allions_glob(),
-            mode = "normal",
+            CP_allions = source_ions,
+            mode = input$skyline_mode,
             quant_ion = "Most intense",
             ms_resolution = input$MSresolution,
             strategy = input$skyline_strategy,

@@ -24,3 +24,4 @@
 ## Instruction File Maintenance
 - `inst/instructions_CPions.md` and `inst/instructions_CPquant.md` are rendered in-app via `includeMarkdown` (`R/CPions.R:190`, `R/CPquant.R:229`). Whenever UI features are added, removed, or changed in either app file, update the corresponding instruction file to inform the user. Keep entries short and informative.
 - `inst/instructions_CPions.html` is a legacy static HTML copy — update it if the `.md` changes and the HTML version is still in use.
+- When `tp_catalog` in `R/CPions_utils.R` is updated (add, remove, or rename a transformation product), also update the transformation-product table in `inst/instructions_CPions.md` (Advanced settings) so notations, descriptions, and Phase I/II labels stay in sync. Regenerate `inst/CPions_TP_formula.xlsx` with `CPxplorer:::write_tp_formula_xlsx()`.

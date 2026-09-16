@@ -115,8 +115,6 @@ tp_catalog <- tibble::tribble(
     "-H+SO4H",       "Sulfonation",                          "CxH2x+2-yClyO4S",                         NA_character_,
     "-H+C6H10O7",    "Glucuronidation",                      "Cx+6H2x+2-y+9ClyO7",                     NA_character_,
     "-2H+2O",        "Carboxylic acid / omega-oxidation",    "CxH2x+2-y-2ClyO2",                        NA_character_,
-    "-Br+OH",        "Br-hydroxylation",                     "CxH2x+2-y-z+1ClyBrz-1O",                  NA_character_,
-    "-2Br+2OH",      "Double Br-hydroxylation",              "CxH2x+2-y-z+2ClyBrz-2O2",                 NA_character_,
     "-H+OCH3",       "Methoxylation",                        "Cx+1H2x+2-y+2ClyO",                      NA_character_,
     "-Cl+OCH3",      "Cl-methoxylation",                     "Cx+1H2x+2-y+3Cly-1O",                     NA_character_,
     "-4H+2O",        "Diketone",                             "CxH2x+2-y-4ClyO2",                        NA_character_
@@ -976,6 +974,12 @@ build_tp_formula_table <- function() {
 
 write_tp_formula_xlsx <- function(path = "inst/CPions_TP_formula.xlsx") {
     openxlsx::write.xlsx(build_tp_formula_table(), path, overwrite = TRUE)
+}
+
+########################################################################
+
+apply_unit_mass_mz <- function(CP_allions) {
+    dplyr::mutate(CP_allions, `m/z` = round(`m/z`, 0))
 }
 
 ########################################################################

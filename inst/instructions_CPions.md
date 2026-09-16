@@ -10,7 +10,7 @@ Several adducts have been included and more can be added upon request (https://g
   
 ## Instructions  
 Choose the parameters in the _Normal settings_ or _Advanced settings_ tab. Press submit and wait for calculation to finish. A table will then be generated with all ions that conform with the initial setting parameters. The table can be exported to excel by clicking on the "Excel" button at the top.  
-The _Interfering ions_ tab can be used to check for ions that interfer with each other at the estimated resolution of the mass spectrometer. Default is set to R=20,000. 
+The _Interfering ions_ tab can be used to check for ions that interfer with each other at the estimated resolution of the mass spectrometer. Default is set to R=20,000. Check _Unit mass resolution_ (unchecked by default) to hide MS Resolution, round m/z values to integers for a low-resolution quadrupole, and treat ions with the same nominal m/z as interfering. After Calculate, Skyline export uses those integer masses. 
 The plots and tables are interactive and the user can filter the _"Interference at MS res?"_ by clicking on _NO_ on the plot legend (and thereby keeping all _YES_ ions, which will remove all ions that can be resolved by the set MS resolution).  
 The generated ion tables can be exported using the Skyline tab for data processing of MS data.  
   
@@ -39,7 +39,22 @@ Mostly same initial parameters as Normal settings. Compound class, adduct, charg
 
 __Compound Class__: `PCA` (alkane, H = 2C+2−Cl), `PCO` (mono-olefin, H = 2C−Cl), `PCdiO` (di-olefin, H = 2C−2−Cl), `PCtriO` (tri-olefin, H = 2C−4−Cl), `BCA` (bromo-chloro alkane, H = 2C+2−Cl−Br). PCdiO and PCtriO are only in Advanced settings. Br min/max apply to BCA.  
 
-__Transformation product__: predefined notations (multiple allowed): `None`, `-Cl+OH`, `-H+OH`, `-2Cl+2OH`, `-2H+2OH`, `-2H+O`, `-H+SO4H`, `-H+C6H10O7`, `-2H+2O`, `-Br+OH`, `-2Br+2OH`, `-H+OCH3`, `-Cl+OCH3`, `-4H+2O`. `-Br+OH` / `-2Br+2OH` require BCA only.  
+__Transformation product__: predefined notations (multiple allowed). Phase I = functionalization; Phase II = conjugation. A dash means the product is not assigned to a phase.
+
+| Notation | Description | Phase |
+|----------|-------------|-------|
+| `None` | Parent compound (no transformation) | — |
+| `-Cl+OH` | Cl-hydroxylation | I |
+| `-H+OH` | H-hydroxylation | I |
+| `-2Cl+2OH` | Double Cl-hydroxylation | I |
+| `-2H+2OH` | Double H-hydroxylation | I |
+| `-2H+O` | Oxidation (ketone/aldehyde) | I |
+| `-H+SO4H` | Sulfonation | II |
+| `-H+C6H10O7` | Glucuronidation | II |
+| `-2H+2O` | Carboxylic acid / omega-oxidation | I |
+| `-H+OCH3` | Methoxylation | — |
+| `-Cl+OCH3` | Cl-methoxylation | — |
+| `-4H+2O` | Diketone | I |  
 
 __Custom transformation product__: unchecked by default. When checked, the dropdown is replaced by a text field. Enter one or more notations separated by `;`, e.g. `-H+OH; -Cl+OH; -2H+2OH`. `-H` is loss of one H; `+OH` is gain of OH; `-2H` is loss of two H. Empty input is `None`. Invalid grammar or a TP that is impossible for the selected class and C/Cl/Br range blocks calculation (no table). `-2H+O` is valid (ketone).  
   
@@ -74,6 +89,8 @@ __difflag__, __difflead__: internal calculations for the difference in m/z value
 __reslag__, __reslead__: internal calculations for the MS resolution needed to separate the two nearest ions. If "interference at MS res?" filter has been used, then the previous/next ions might not be shown.  
   
 __interference__: indicate whether or not the m/z two nearest ions can interfere with each other at the set MS resolution value. _"NO"_ means no interference and _"YES"_ means there is interference (and therefore the MS resolution cannot resolve these peaks).  
+  
+__Unit mass resolution__: unchecked by default. When checked, the MS Resolution input is hidden and all m/z values are rounded to integers to reflect a low-resolution (quadrupole) mass spectrometer. Ions that share the same nominal m/z are flagged as interfering. Skyline `mz` export uses these integer masses after Calculate.  
   
 If the legend _"Interference at MS res?"_ does not appear in the plots then it means that there are no interfering ions among the chosen compounds.  
 
