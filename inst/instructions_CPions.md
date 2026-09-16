@@ -117,15 +117,15 @@ _"Most intense"_ (default): the ion with highest theoretical abundance is used a
 
 _"Interference-filtered"_: the `Interference ions` calculation MUST be first performed. This mode activates the _Selection strategy_ and _Preferred number of Qual ions_ options below. The Skyline table includes diagnostic columns describing the selected ion rank, reason for selection, number of interfering candidates, closest interfering m/z, and resolution needed.  
 
-__Selection strategy__ (only applies when _"Interference-filtered"_ is selected):  
+__Selection strategy__ (only applies when _"Interference-filtered"_ is selected):
 
-  _Highest abundance Quan_: selects the most abundant ion as Quan regardless of interference. If the most abundant ion interferes, it is still used and flagged [INTERFERENCE] in the Note column.  
+  _Highest abundance_: selects the most abundant ion as Quan regardless of interference. Qual ions are the next-most-abundant leftovers, including interfering ions. Interfering Quan or Qual ions are flagged [INTERFERENCE] in the Note column.
 
-  _Balanced_: selects the highest-abundance ion that does not have mass interference at the set MS resolution. If all ions for a _Molecule Name_ interfere, the most abundant ion is used and flagged [INTERFERENCE]. This balances signal strength with interference avoidance.  
+  _Balanced_: selects the highest-abundance ion that does not have mass interference at the set MS resolution as Quan. Qual ions prefer the highest-abundance non-interfering leftovers. If all ions for a _Molecule Name_ interfere, the most abundant ion is used as Quan and flagged [INTERFERENCE]. If fewer than the requested Qual ions are non-interfering, remaining Qual slots are filled with the next-best interfering leftovers and flagged [INTERFERENCE]. This balances signal strength with interference avoidance.
 
-  _Least interference Quan_: prioritizes minimizing interference over abundance. Ions are sorted first by interference status and count, then by abundance. This may select a lower-abundance Quan ion to avoid interference.  
+  _Least interference_: prioritizes minimizing interference over abundance for both Quan and Qual. Ions are sorted first by interference status and count, then by abundance. This may select a lower-abundance Quan or Qual ion to avoid interference. If fewer than the requested Qual ions are non-interfering, remaining Qual slots are filled with the next-best interfering leftovers and flagged [INTERFERENCE].
 
-__Preferred number of Qual ions__ (only applies when _"Interference-filtered"_ is selected): sets the target number of Qual ions kept per _Molecule Name_ in the strategy-based selection. The actual count may be lower if insufficient non-interfering candidates are available.  
+__Preferred number of Qual ions__ (only applies when _"Interference-filtered"_ is selected): sets the target number of Qual ions kept per _Molecule Name_ in the strategy-based selection. The actual count may be lower if too few leftovers remain after skipping collisions with other molecules' selected ions.  
   
 __Molecule List Name__: specifies how the compounds are grouped in Skyline. In this case, the naming is by: Compound Class, Carbon Chain Length, Transformation Product (if present). The user can freely change this in the exported spreadsheet for their own needs.  
   

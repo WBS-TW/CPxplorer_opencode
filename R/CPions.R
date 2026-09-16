@@ -173,14 +173,14 @@ ui <- shiny::navbarPage(
                                                  selected = "Most intense"),
                              shiny::conditionalPanel(
                                  condition = "input.QuantIon == 'Interference-filtered'",
-                                 shiny::helpText("When using interference filtering, choose a strategy to select the Quant ion and set the preferred number of Qual ions."),
+                                 shiny::helpText("When using interference filtering, choose a strategy to select Quan and Qual ions and set the preferred number of Qual ions."),
                                  shiny::selectInput(
                                      "skyline_strategy",
                                      label = "Selection strategy",
                                      choices = c(
-                                        "Highest abundance Quan" = "abundance",
+                                        "Highest abundance" = "abundance",
                                         "Balanced" = "balanced",
-                                        "Least interference Quan" = "interference"
+                                        "Least interference" = "interference"
                                      ),
                                      selected = "balanced"
                                  ),

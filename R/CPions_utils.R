@@ -1214,6 +1214,98 @@ append_skyline_note_warnings <- function(transitions, annotation_col, ms_resolut
 
 ########################################################################
 
+rank_skyline_qual_candidates <- function(candidates, strategy) {
+    switch(
+        strategy,
+        abundance = candidates |>
+            dplyr::arrange(dplyr::desc(Rel_ab), `Precursor m/z`),
+        balanced = candidates |>
+            dplyr::arrange(
+                .original_interference,
+                dplyr::desc(Rel_ab),
+                `Precursor m/z`
+            ),
+        interference = candidates |>
+            dplyr::arrange(
+                .original_interference,
+                `Interfering Candidate Count`,
+                dplyr::coalesce(`Resolution Needed`, 0),
+                dplyr::desc(Rel_ab),
+                `Precursor m/z`
+            )
+    )
+}
+
+select_qual_by_strategy <- function(leftovers, strategy, preferred_qual_n, other_mz, own_mz, ms_resolution) {
+    if (preferred_qual_n <= 0L || nrow(leftovers) == 0L) {
+        return(leftovers[0, , drop = FALSE])
+    }
+
+    ranked <- rank_skyline_qual_candidates(leftovers, strategy)
+    selected <- list()
+    selected_own_mz <- own_mz
+
+    accept_candidate <- function(candidate, reason) {
+        candidate$`Label Type` <- "Qual"
+        candidate$`Ion Selection Rank` <- candidate$`Original Rel_ab Rank`
+        candidate$`Selected Reason` <- reason
+        selected[[length(selected) + 1]] <<- candidate
+        selected_own_mz <<- c(selected_own_mz, candidate$`Precursor m/z`[[1]])
+    }
+
+    candidate_is_interfering <- function(candidate) {
+        mz <- candidate$`Precursor m/z`[[1]]
+        original_yes <- identical(candidate$.original_interference[[1]], "YES")
+        collides_own <- has_ms_interference(mz, selected_own_mz, ms_resolution)
+        original_yes || collides_own
+    }
+
+    for (i in seq_len(nrow(ranked))) {
+        if (length(selected) >= preferred_qual_n) {
+            break
+        }
+        candidate <- ranked[i, , drop = FALSE]
+        mz <- candidate$`Precursor m/z`[[1]]
+        if (has_ms_interference(mz, other_mz, ms_resolution)) {
+            next
+        }
+        is_interfering <- candidate_is_interfering(candidate)
+        if (strategy == "abundance") {
+            accept_candidate(
+                candidate,
+                if (is_interfering) "Qual: fallback interfering" else "Qual: non-interfering"
+            )
+            next
+        }
+        if (!is_interfering) {
+            accept_candidate(candidate, "Qual: non-interfering")
+        }
+    }
+
+    if (strategy != "abundance" && length(selected) < preferred_qual_n) {
+        kept_ids <- vapply(selected, function(row) row$.candidate_id[[1]], numeric(1))
+        for (i in seq_len(nrow(ranked))) {
+            if (length(selected) >= preferred_qual_n) {
+                break
+            }
+            candidate <- ranked[i, , drop = FALSE]
+            if (candidate$.candidate_id[[1]] %in% kept_ids) {
+                next
+            }
+            mz <- candidate$`Precursor m/z`[[1]]
+            if (has_ms_interference(mz, other_mz, ms_resolution)) {
+                next
+            }
+            accept_candidate(candidate, "Qual: fallback interfering")
+        }
+    }
+
+    if (length(selected) == 0L) {
+        return(ranked[0, , drop = FALSE])
+    }
+    dplyr::bind_rows(selected)
+}
+
 select_skyline_filtered_candidates <- function(skyline_data, annotation_col, ms_resolution, preferred_qual_n,
                                                strategy = "balanced") {
     if (is.null(ms_resolution)) {
@@ -1227,34 +1319,32 @@ select_skyline_filtered_candidates <- function(skyline_data, annotation_col, ms_
 
     selected_rows <- if (nrow(quan_candidates) > 0) list(quan_candidates) else list()
     selected_ids <- quan_candidates$.candidate_id
-    selected_mz <- quan_candidates$`Precursor m/z`
+    molecule_names <- unique(candidates$`Molecule Name`)
+    selected_mz_by_molecule <- split(quan_candidates$`Precursor m/z`, quan_candidates$`Molecule Name`)
+    for (molecule_name in molecule_names) {
+        if (is.null(selected_mz_by_molecule[[molecule_name]])) {
+            selected_mz_by_molecule[[molecule_name]] <- numeric(0)
+        }
+    }
 
-    remaining_candidates <- candidates |>
-        dplyr::filter(!(.candidate_id %in% selected_ids)) |>
-        dplyr::arrange(`Original Rel_ab Rank`, `Precursor m/z`)
-
-    qual_counts <- stats::setNames(
-        rep(0L, length(unique(candidates$`Molecule Name`))),
-        unique(candidates$`Molecule Name`)
-    )
-
-    if (nrow(remaining_candidates) > 0) {
-        for (i in seq_len(nrow(remaining_candidates))) {
-            candidate <- remaining_candidates[i, , drop = FALSE]
-            molecule_name <- candidate$`Molecule Name`[[1]]
-
-            if (qual_counts[[molecule_name]] >= preferred_qual_n) {
-                next
-            }
-
-            if (!has_ms_interference(candidate$`Precursor m/z`, selected_mz, ms_resolution)) {
-                candidate$`Label Type` <- "Qual"
-                candidate$`Ion Selection Rank` <- candidate$`Original Rel_ab Rank`
-                candidate$`Selected Reason` <- "Qual: non-interfering"
-                selected_rows[[length(selected_rows) + 1]] <- candidate
-                selected_mz <- c(selected_mz, candidate$`Precursor m/z`)
-                qual_counts[[molecule_name]] <- qual_counts[[molecule_name]] + 1L
-            }
+    for (molecule_name in molecule_names) {
+        leftovers <- candidates |>
+            dplyr::filter(`Molecule Name` == molecule_name, !(.candidate_id %in% selected_ids))
+        other_names <- setdiff(names(selected_mz_by_molecule), molecule_name)
+        other_mz <- unlist(selected_mz_by_molecule[other_names], use.names = FALSE)
+        own_mz <- selected_mz_by_molecule[[molecule_name]]
+        quals <- select_qual_by_strategy(
+            leftovers = leftovers,
+            strategy = strategy,
+            preferred_qual_n = preferred_qual_n,
+            other_mz = other_mz,
+            own_mz = own_mz,
+            ms_resolution = ms_resolution
+        )
+        if (nrow(quals) > 0) {
+            selected_rows[[length(selected_rows) + 1]] <- quals
+            selected_ids <- c(selected_ids, quals$.candidate_id)
+            selected_mz_by_molecule[[molecule_name]] <- c(own_mz, quals$`Precursor m/z`)
         }
     }
 
