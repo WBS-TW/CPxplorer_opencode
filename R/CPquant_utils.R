@@ -53,6 +53,441 @@ read_cpquant_skyline <- function(path, standard_types = "Group Mixtures") {
         normalize_cpquant_skyline(standard_types = standard_types)
 }
 
+#-------------------------------
+apply_cpquant_preprocessing <- function(
+    df,
+    remove_samples = NULL,
+    quan_sum = "Quan only",
+    correct_with_rs = "No",
+    choose_rs = NULL,
+    blank_subtraction = "No",
+    standard_types = "Group Mixtures"
+) {
+    if (!is.null(remove_samples) && length(remove_samples) > 0) {
+        df <- df |>
+            dplyr::filter(!Replicate_Name %in% remove_samples)
+    }
+
+    if (identical(quan_sum, "Sum Quan+Qual")) {
+        df <- df |>
+            dplyr::group_by(Replicate_Name, Molecule_List, Molecule) |>
+            dplyr::mutate(Area = sum(Area)) |>
+            dplyr::ungroup()
+    }
+
+    if (identical(correct_with_rs, "Yes") && any(df$Molecule_List == "RS")) {
+        if (!is.null(choose_rs) && nzchar(choose_rs)) {
+            df <- df |>
+                dplyr::group_by(Replicate_Name) |>
+                dplyr::mutate(
+                    .rs_val = dplyr::first(Area[
+                        Molecule == choose_rs &
+                            Molecule_List == "RS" &
+                            Isotope_Label_Type == "Quan"
+                    ]),
+                    Area = dplyr::if_else(!is.na(.rs_val) & .rs_val > 0, Area / .rs_val, NA_real_)
+                ) |>
+                dplyr::ungroup() |>
+                dplyr::select(-.rs_val)
+        }
+    }
+
+    if (identical(blank_subtraction, "Yes, by avg area of blanks")) {
+        df_blank <- df |>
+            dplyr::filter(Sample_Type == "Blank") |>
+            dplyr::group_by(Molecule, Molecule_List, Isotope_Label_Type) |>
+            dplyr::summarise(AverageBlank = mean(Area, na.rm = TRUE), .groups = "drop") |>
+            dplyr::filter(!Molecule_List %in% c("IS", "RS", "VS"))
+
+        df <- df |>
+            dplyr::left_join(
+                df_blank,
+                by = c("Molecule", "Molecule_List", "Isotope_Label_Type")
+            ) |>
+            dplyr::mutate(AverageBlank = tidyr::replace_na(AverageBlank, 0)) |>
+            dplyr::mutate(
+                Area = dplyr::case_when(
+                    Sample_Type == "Unknown" ~ Area - AverageBlank,
+                    TRUE ~ Area
+                ),
+                Area = ifelse(Area < 0, 0, Area)
+            )
+    }
+
+    if (identical(standard_types, "Group Mixtures")) {
+        df <- df |>
+            dplyr::mutate(
+                Quantification_Group = stringr::str_extract(Batch_Name, "^[^_]+")
+            )
+    }
+
+    df
+}
+
+#-------------------------------
+prepare_cpquant_standards <- function(df, min_rsquared = 0.9) {
+    df |>
+        dplyr::filter(
+            Sample_Type == "Standard",
+            !Molecule_List %in% c("IS", "RS"),
+            Isotope_Label_Type == "Quan",
+            !is.na(Batch_Name),
+            Batch_Name != "NA"
+        ) |>
+        dplyr::mutate(
+            C_range = stringr::str_extract_all(Quantification_Group, "\\d+"),
+            C_min = as.numeric(purrr::map_chr(C_range, ~ .x[1])),
+            C_max = as.numeric(purrr::map_chr(C_range, function(x) {
+                if (length(x) > 1) x[2] else x[1]
+            }))
+        ) |>
+        dplyr::select(-C_range) |>
+        dplyr::group_by(
+            Batch_Name, Sample_Type, Molecule, Molecule_List,
+            C_number, Cl_number, PCA, Quantification_Group, C_min, C_max
+        ) |>
+        tidyr::nest() |>
+        dplyr::filter(C_number >= C_min & C_number <= C_max) |>
+        dplyr::mutate(models = purrr::map(data, ~ stats::lm(Area ~ Analyte_Concentration, data = .x))) |>
+        dplyr::mutate(coef = purrr::map(models, stats::coef)) |>
+        dplyr::mutate(RF_raw = purrr::map_dbl(models, ~ as.numeric(stats::coef(.x)["Analyte_Concentration"]))) |>
+        dplyr::mutate(intercept = purrr::map_dbl(coef, ~ as.numeric(purrr::pluck(.x, "(Intercept)", .default = NA_real_)))) |>
+        dplyr::mutate(cal_rsquared = purrr::map(models, summary)) |>
+        dplyr::mutate(cal_rsquared = purrr::map_dbl(cal_rsquared, ~ as.numeric(purrr::pluck(.x, "r.squared", .default = 0)))) |>
+        dplyr::select(-coef) |>
+        dplyr::mutate(
+            cal_rsquared = ifelse(is.nan(cal_rsquared) | is.na(cal_rsquared), 0, cal_rsquared),
+            RF = dplyr::if_else(is.na(RF_raw) | RF_raw < 0 | cal_rsquared < min_rsquared, 0, RF_raw)
+        ) |>
+        dplyr::ungroup() |>
+        dplyr::group_by(Batch_Name) |>
+        dplyr::mutate(Sum_RF_group = sum(RF, na.rm = TRUE)) |>
+        dplyr::ungroup()
+}
+
+#-------------------------------
+format_calibration_export_table <- function(standards_tbl) {
+    if (!"RF_raw" %in% names(standards_tbl)) {
+        standards_tbl <- dplyr::mutate(standards_tbl, RF_raw = RF)
+    }
+
+    standards_tbl |>
+        dplyr::ungroup() |>
+        dplyr::select(
+            Batch_Name,
+            Quantification_Group,
+            Molecule_List,
+            Molecule,
+            C_number,
+            Cl_number,
+            PCA,
+            C_min,
+            C_max,
+            RF_raw,
+            RF,
+            intercept,
+            cal_rsquared,
+            Sum_RF_group
+        ) |>
+        dplyr::mutate(
+            C_number = as.numeric(C_number),
+            Cl_number = as.numeric(Cl_number),
+            C_min = as.numeric(C_min),
+            C_max = as.numeric(C_max),
+            RF_raw = as.numeric(RF_raw),
+            RF = as.numeric(RF),
+            intercept = as.numeric(intercept),
+            cal_rsquared = as.numeric(cal_rsquared),
+            Sum_RF_group = as.numeric(Sum_RF_group)
+        )
+}
+
+#-------------------------------
+write_cpquant_calibration_xlsx <- function(
+    path,
+    standards_tbl,
+    raw_standards_df = NULL,
+    metadata = list()
+) {
+    wb <- openxlsx::createWorkbook()
+    openxlsx::addWorksheet(wb, "Calibration")
+    openxlsx::addWorksheet(wb, "Standards_Data")
+    openxlsx::addWorksheet(wb, "Metadata")
+
+    cal_export <- format_calibration_export_table(standards_tbl)
+    openxlsx::writeData(wb, "Calibration", cal_export)
+
+    if (is.null(raw_standards_df)) {
+        raw_standards_df <- tibble::tibble()
+    } else {
+        raw_standards_df <- raw_standards_df |>
+            dplyr::filter(Sample_Type == "Standard")
+    }
+    openxlsx::writeData(wb, "Standards_Data", raw_standards_df)
+
+    default_meta <- list(
+        created_date = as.character(Sys.Date()),
+        standardTypes = "Group Mixtures",
+        quanSum = "Quan only",
+        blankSubtraction = "No",
+        correctWithRS = "No",
+        chooseRS = "",
+        removeRsquared = "0.9",
+        quanUnit = ""
+    )
+    merged_meta <- utils::modifyList(default_meta, lapply(metadata, function(x) {
+        if (is.null(x) || length(x) == 0 || all(is.na(x))) "" else as.character(x[[1]])
+    }))
+    meta_tbl <- tibble::tibble(
+        Setting = names(merged_meta),
+        Value = unlist(merged_meta, use.names = FALSE)
+    )
+    openxlsx::writeData(wb, "Metadata", meta_tbl)
+
+    openxlsx::saveWorkbook(wb, path, overwrite = TRUE)
+    invisible(path)
+}
+
+#-------------------------------
+read_cpquant_calibration_xlsx <- function(
+    path,
+    min_rsquared = 0.9,
+    quan_sum = NULL,
+    correct_with_rs = NULL,
+    choose_rs = NULL,
+    standard_types = "Group Mixtures"
+) {
+    sheets <- readxl::excel_sheets(path)
+    if (!"Calibration" %in% sheets) {
+        stop("Invalid calibration file: missing 'Calibration' worksheet.")
+    }
+
+    cal_df <- readxl::read_excel(path, sheet = "Calibration", guess_max = 5000)
+    required_cols <- c(
+        "Batch_Name", "Quantification_Group", "Molecule_List", "Molecule",
+        "C_number", "Cl_number", "PCA", "RF", "intercept", "cal_rsquared"
+    )
+    missing_cols <- setdiff(required_cols, names(cal_df))
+    if (length(missing_cols) > 0) {
+        stop(sprintf(
+            "Invalid calibration file: missing required column(s) in 'Calibration' sheet: %s",
+            paste(missing_cols, collapse = ", ")
+        ))
+    }
+
+    metadata <- list()
+    if ("Metadata" %in% sheets) {
+        meta_df <- readxl::read_excel(path, sheet = "Metadata")
+        if (all(c("Setting", "Value") %in% names(meta_df))) {
+            meta_vals <- ifelse(is.na(meta_df$Value), "", as.character(meta_df$Value))
+            metadata <- stats::setNames(as.list(meta_vals), as.character(meta_df$Setting))
+        }
+    }
+
+    raw_standards <- tibble::tibble()
+    if ("Standards_Data" %in% sheets) {
+        raw_in <- readxl::read_excel(
+            path,
+            sheet = "Standards_Data",
+            guess_max = 5000,
+            na = c("", "NA", "#N/A", "N/A")
+        )
+        if (nrow(raw_in) > 0) {
+            raw_standards <- normalize_cpquant_skyline(raw_in, standard_types = standard_types)
+        }
+    }
+
+    settings_changed <- FALSE
+    if (nrow(raw_standards) > 0 && length(metadata) > 0) {
+        if (!is.null(quan_sum) && !is.null(metadata$quanSum) && nzchar(metadata$quanSum) &&
+            !identical(as.character(quan_sum), as.character(metadata$quanSum))) {
+            settings_changed <- TRUE
+        }
+        if (!is.null(correct_with_rs) && !is.null(metadata$correctWithRS) && nzchar(metadata$correctWithRS) &&
+            !identical(as.character(correct_with_rs), as.character(metadata$correctWithRS))) {
+            settings_changed <- TRUE
+        }
+        if (identical(correct_with_rs, "Yes") && !is.null(choose_rs) && nzchar(choose_rs) &&
+            !is.null(metadata$chooseRS) && !identical(as.character(choose_rs), as.character(metadata$chooseRS))) {
+            settings_changed <- TRUE
+        }
+    }
+
+    if (settings_changed && nrow(raw_standards) > 0) {
+        processed_std <- apply_cpquant_preprocessing(
+            raw_standards,
+            remove_samples = NULL,
+            quan_sum = if (!is.null(quan_sum)) quan_sum else "Quan only",
+            correct_with_rs = if (!is.null(correct_with_rs)) correct_with_rs else "No",
+            choose_rs = choose_rs,
+            blank_subtraction = "No",
+            standard_types = standard_types
+        )
+        standards <- prepare_cpquant_standards(processed_std, min_rsquared = min_rsquared)
+    } else {
+        if (!"RF_raw" %in% names(cal_df)) {
+            cal_df <- dplyr::mutate(cal_df, RF_raw = as.numeric(RF))
+        }
+        if (!all(c("C_min", "C_max") %in% names(cal_df))) {
+            cal_df <- cal_df |>
+                dplyr::mutate(
+                    C_range = stringr::str_extract_all(Quantification_Group, "\\d+"),
+                    C_min = as.numeric(purrr::map_chr(C_range, ~ .x[1])),
+                    C_max = as.numeric(purrr::map_chr(C_range, function(x) {
+                        if (length(x) > 1) x[2] else x[1]
+                    }))
+                ) |>
+                dplyr::select(-C_range)
+        }
+        standards <- cal_df |>
+            dplyr::mutate(
+                Sample_Type = "Standard",
+                C_number = as.numeric(C_number),
+                Cl_number = as.numeric(Cl_number),
+                C_min = as.numeric(C_min),
+                C_max = as.numeric(C_max),
+                RF_raw = as.numeric(RF_raw),
+                intercept = as.numeric(intercept),
+                cal_rsquared = as.numeric(cal_rsquared),
+                cal_rsquared = ifelse(is.nan(cal_rsquared) | is.na(cal_rsquared), 0, cal_rsquared),
+                RF = dplyr::if_else(is.na(RF_raw) | RF_raw < 0 | cal_rsquared < min_rsquared, 0, RF_raw)
+            ) |>
+            dplyr::group_by(Batch_Name) |>
+            dplyr::mutate(Sum_RF_group = sum(RF, na.rm = TRUE)) |>
+            dplyr::ungroup()
+    }
+
+    list(
+        standards = standards,
+        raw_standards = raw_standards,
+        metadata = metadata
+    )
+}
+
+#-------------------------------
+compare_calibration_rf_qc <- function(
+    saved_standards,
+    current_skyline_df,
+    pass_pct = 20,
+    review_pct = 30
+) {
+    empty_batch <- tibble::tibble(
+        Batch_Name = character(),
+        Quantification_Group = character(),
+        n_homologues = integer(),
+        n_standards = integer(),
+        Sum_RF_saved = numeric(),
+        Sum_RF_current = numeric(),
+        RF_ratio = numeric(),
+        pct_diff = numeric(),
+        qc_flag = character()
+    )
+    empty_homologue <- tibble::tibble(
+        Batch_Name = character(),
+        Quantification_Group = character(),
+        Molecule_List = character(),
+        Molecule = character(),
+        C_number = numeric(),
+        Cl_number = numeric(),
+        PCA = character(),
+        n_standards = integer(),
+        RF_saved = numeric(),
+        RF_current = numeric(),
+        RF_ratio = numeric(),
+        pct_diff = numeric(),
+        qc_flag = character()
+    )
+
+    if (is.null(saved_standards) || nrow(saved_standards) == 0 ||
+        is.null(current_skyline_df) || nrow(current_skyline_df) == 0) {
+        return(list(batch_qc = empty_batch, homologue_qc = empty_homologue))
+    }
+
+    saved_active <- saved_standards |>
+        dplyr::ungroup() |>
+        dplyr::filter(RF > 0) |>
+        dplyr::select(
+            Batch_Name, Quantification_Group, Molecule_List, Molecule,
+            C_number, Cl_number, PCA, RF_saved = RF
+        )
+
+    if (nrow(saved_active) == 0) {
+        return(list(batch_qc = empty_batch, homologue_qc = empty_homologue))
+    }
+
+    check_points <- current_skyline_df |>
+        dplyr::filter(
+            Sample_Type == "Standard",
+            !Molecule_List %in% c("IS", "RS", "VS"),
+            Isotope_Label_Type == "Quan",
+            !is.na(Batch_Name),
+            Batch_Name != "NA",
+            !is.na(Analyte_Concentration),
+            Analyte_Concentration > 0
+        ) |>
+        dplyr::mutate(RF_point = Area / Analyte_Concentration)
+
+    if (nrow(check_points) == 0) {
+        return(list(batch_qc = empty_batch, homologue_qc = empty_homologue))
+    }
+
+    joined <- saved_active |>
+        dplyr::inner_join(
+            check_points |>
+                dplyr::select(Batch_Name, Molecule, Replicate_Name, Analyte_Concentration, Area, RF_point),
+            by = c("Batch_Name", "Molecule")
+        )
+
+    if (nrow(joined) == 0) {
+        return(list(batch_qc = empty_batch, homologue_qc = empty_homologue))
+    }
+
+    homologue_qc <- joined |>
+        dplyr::group_by(
+            Batch_Name, Quantification_Group, Molecule_List, Molecule,
+            C_number, Cl_number, PCA, RF_saved
+        ) |>
+        dplyr::summarise(
+            n_standards = as.integer(dplyr::n()),
+            RF_current = mean(RF_point, na.rm = TRUE),
+            .groups = "drop"
+        ) |>
+        dplyr::mutate(
+            RF_ratio = dplyr::if_else(RF_saved > 0, RF_current / RF_saved, NA_real_),
+            pct_diff = dplyr::if_else(RF_saved > 0, (RF_current - RF_saved) / RF_saved * 100, NA_real_),
+            qc_flag = dplyr::case_when(
+                is.na(pct_diff) | !is.finite(pct_diff) ~ "No signal",
+                abs(pct_diff) <= pass_pct ~ "Pass",
+                abs(pct_diff) <= review_pct ~ "Review",
+                TRUE ~ "Fail"
+            )
+        ) |>
+        dplyr::arrange(Batch_Name, C_number, Cl_number)
+
+    batch_qc <- homologue_qc |>
+        dplyr::group_by(Batch_Name, Quantification_Group) |>
+        dplyr::summarise(
+            n_homologues = as.integer(dplyr::n()),
+            n_standards = as.integer(max(n_standards, na.rm = TRUE)),
+            Sum_RF_saved = sum(RF_saved, na.rm = TRUE),
+            Sum_RF_current = sum(RF_current, na.rm = TRUE),
+            .groups = "drop"
+        ) |>
+        dplyr::mutate(
+            RF_ratio = dplyr::if_else(Sum_RF_saved > 0, Sum_RF_current / Sum_RF_saved, NA_real_),
+            pct_diff = dplyr::if_else(Sum_RF_saved > 0, (Sum_RF_current - Sum_RF_saved) / Sum_RF_saved * 100, NA_real_),
+            qc_flag = dplyr::case_when(
+                is.na(pct_diff) | !is.finite(pct_diff) ~ "No signal",
+                abs(pct_diff) <= pass_pct ~ "Pass",
+                abs(pct_diff) <= review_pct ~ "Review",
+                TRUE ~ "Fail"
+            )
+        ) |>
+        dplyr::arrange(Batch_Name)
+
+    list(batch_qc = batch_qc, homologue_qc = homologue_qc)
+}
+
 # =========================================================
 # Helper UI builders
 # =========================================================

@@ -107,3 +107,202 @@ test_that("CPquant deconvolution helper accepts demo-shaped matrices", {
         expect_true(all(is.finite(result$deconv_resolved)))
     }
 })
+
+test_that("CPquant saves and reloads calibration workbook with Calibration, Standards_Data (including IS/RS), and Metadata", {
+    df <- cpquant_demo_base_df("GC")
+    standards <- CPxplorer:::prepare_cpquant_standards(df, min_rsquared = 0.9)
+
+    expect_true("RF_raw" %in% names(standards))
+    expect_true(all(c("RF", "intercept", "cal_rsquared", "Sum_RF_group") %in% names(standards)))
+
+    tmp_xlsx <- tempfile(fileext = ".xlsx")
+    on.exit(unlink(tmp_xlsx), add = TRUE)
+
+    raw_standards <- dplyr::filter(df, Sample_Type == "Standard")
+    expect_true(any(raw_standards$Molecule_List %in% c("IS", "RS")))
+
+    CPxplorer:::write_cpquant_calibration_xlsx(
+        path = tmp_xlsx,
+        standards_tbl = standards,
+        raw_standards_df = raw_standards,
+        metadata = list(
+            standardTypes = "Group Mixtures",
+            quanSum = "Quan only",
+            blankSubtraction = "No",
+            correctWithRS = "No",
+            chooseRS = "",
+            removeRsquared = 0.9,
+            quanUnit = "ng/uL"
+        )
+    )
+
+    expect_true(file.exists(tmp_xlsx))
+    sheets <- readxl::excel_sheets(tmp_xlsx)
+    expect_equal(sheets, c("Calibration", "Standards_Data", "Metadata"))
+
+    loaded <- CPxplorer:::read_cpquant_calibration_xlsx(
+        path = tmp_xlsx,
+        min_rsquared = 0.9,
+        quan_sum = "Quan only",
+        correct_with_rs = "No",
+        choose_rs = "",
+        standard_types = "Group Mixtures"
+    )
+
+    expect_named(loaded, c("standards", "raw_standards", "metadata"))
+    expect_equal(nrow(loaded$standards), nrow(standards))
+    expect_equal(loaded$standards$RF, standards$RF, tolerance = 1e-6)
+    expect_equal(loaded$standards$Sum_RF_group, standards$Sum_RF_group, tolerance = 1e-6)
+    expect_true(any(loaded$raw_standards$Molecule_List %in% c("IS", "RS")))
+
+    # Reloading with a different R-squared threshold updates RF and Sum_RF_group
+    loaded_all <- CPxplorer:::read_cpquant_calibration_xlsx(
+        path = tmp_xlsx,
+        min_rsquared = 0,
+        quan_sum = "Quan only",
+        correct_with_rs = "No",
+        choose_rs = "",
+        standard_types = "Group Mixtures"
+    )
+    expect_gte(sum(loaded_all$standards$RF > 0), sum(loaded$standards$RF > 0))
+})
+
+test_that("CPquant compares saved calibration RFs against current run check standards for QA/QC", {
+    df <- cpquant_demo_base_df("GC")
+    saved_standards <- CPxplorer:::prepare_cpquant_standards(df, min_rsquared = 0.9)
+
+    # Simulate a new run with 1 concentration level per Batch_Name as check standard
+    check_std_df <- df |>
+        dplyr::filter(
+            Sample_Type == "Standard",
+            !is.na(Analyte_Concentration),
+            Analyte_Concentration > 0
+        ) |>
+        dplyr::group_by(Batch_Name, Molecule, Isotope_Label_Type) |>
+        dplyr::slice_max(order_by = Analyte_Concentration, n = 1, with_ties = FALSE) |>
+        dplyr::ungroup()
+
+    qc_res <- CPxplorer:::compare_calibration_rf_qc(saved_standards, check_std_df)
+    expect_named(qc_res, c("batch_qc", "homologue_qc"))
+    expect_gt(nrow(qc_res$batch_qc), 0)
+    expect_gt(nrow(qc_res$homologue_qc), 0)
+    expect_true(all(c(
+        "Batch_Name", "Quantification_Group", "n_homologues", "n_standards",
+        "Sum_RF_saved", "Sum_RF_current", "RF_ratio", "pct_diff", "qc_flag"
+    ) %in% names(qc_res$batch_qc)))
+    expect_true(all(c(
+        "Batch_Name", "Quantification_Group", "Molecule_List", "Molecule",
+        "PCA", "n_standards", "RF_saved", "RF_current", "RF_ratio", "pct_diff", "qc_flag"
+    ) %in% names(qc_res$homologue_qc)))
+    expect_true(all(qc_res$batch_qc$qc_flag %in% c("Pass", "Review", "Fail", "No signal")))
+
+    # Perturb Area by +50% in check standards -> should trigger Fail (>30% diff)
+    perturbed_df <- check_std_df |>
+        dplyr::mutate(Area = Area * 1.5)
+    qc_fail <- CPxplorer:::compare_calibration_rf_qc(saved_standards, perturbed_df)
+    expect_true(all(qc_fail$batch_qc$qc_flag == "Fail"))
+})
+
+test_that("Saved calibration dynamically recomputes from Standards_Data when RS or QuanSum settings change", {
+    df <- cpquant_demo_base_df("GC")
+    rs_mol <- df |>
+        dplyr::filter(Molecule_List == "RS") |>
+        dplyr::pull(Molecule) |>
+        unique() |>
+        dplyr::first()
+
+    standards_no_rs <- CPxplorer:::prepare_cpquant_standards(df, min_rsquared = 0.9)
+    tmp_xlsx <- tempfile(fileext = ".xlsx")
+    on.exit(unlink(tmp_xlsx), add = TRUE)
+
+    CPxplorer:::write_cpquant_calibration_xlsx(
+        path = tmp_xlsx,
+        standards_tbl = standards_no_rs,
+        raw_standards_df = dplyr::filter(df, Sample_Type == "Standard"),
+        metadata = list(
+            standardTypes = "Group Mixtures",
+            quanSum = "Quan only",
+            correctWithRS = "No",
+            chooseRS = "",
+            removeRsquared = 0.9
+        )
+    )
+
+    loaded_rs <- CPxplorer:::read_cpquant_calibration_xlsx(
+        path = tmp_xlsx,
+        min_rsquared = 0.9,
+        quan_sum = "Quan only",
+        correct_with_rs = "Yes",
+        choose_rs = rs_mol,
+        standard_types = "Group Mixtures"
+    )
+
+    df_rs_direct <- CPxplorer:::apply_cpquant_preprocessing(
+        df,
+        quan_sum = "Quan only",
+        correct_with_rs = "Yes",
+        choose_rs = rs_mol,
+        standard_types = "Group Mixtures"
+    )
+    standards_rs_direct <- CPxplorer:::prepare_cpquant_standards(df_rs_direct, min_rsquared = 0.9)
+
+    expect_equal(loaded_rs$standards$RF, standards_rs_direct$RF, tolerance = 1e-6)
+    expect_false(isTRUE(all.equal(loaded_rs$standards$RF, standards_no_rs$RF)))
+})
+
+test_that("CPquant Shiny server runs with saved calibration curve and populates Calibration RF Check QA/QC", {
+    skip_if_not_installed("shiny")
+
+    demo_path <- cpquant_demo_path("GC")
+    df <- cpquant_demo_base_df("GC")
+    standards <- CPxplorer:::prepare_cpquant_standards(df, min_rsquared = 0.9)
+
+    tmp_cal <- tempfile(fileext = ".xlsx")
+    on.exit(unlink(tmp_cal), add = TRUE)
+
+    CPxplorer:::write_cpquant_calibration_xlsx(
+        path = tmp_cal,
+        standards_tbl = standards,
+        raw_standards_df = dplyr::filter(df, Sample_Type == "Standard"),
+        metadata = list(
+            standardTypes = "Group Mixtures",
+            quanSum = "Quan only",
+            blankSubtraction = "No",
+            correctWithRS = "No",
+            chooseRS = "",
+            removeRsquared = 0.9,
+            quanUnit = "ng/uL"
+        )
+    )
+
+    app_obj <- CPquant()
+    shiny::testServer(app_obj$serverFuncSource(), {
+        session$setInputs(
+            fileInput = list(datapath = demo_path, name = basename(demo_path)),
+            quanUnit = "ng/uL",
+            quanSum = "Quan only",
+            blankSubtraction = "No",
+            correctWithRS = "No",
+            calculateRecovery = "No",
+            calculateMDL = "No",
+            standardTypes = "Group Mixtures",
+            calibrationSource = "Upload saved calibration (.xlsx)",
+            calibrationFile = list(datapath = tmp_cal, name = basename(tmp_cal)),
+            removeSamples = character(0),
+            removeRsquared = 0.9,
+            go = 1
+        )
+
+        session$flushReact()
+
+        expect_true(!is.null(Samples_Concentration()))
+        expect_gt(nrow(Samples_Concentration()), 0)
+        expect_true(!is.null(Calibration_RF_QC()))
+        expect_gt(nrow(Calibration_RF_QC()$batch_qc), 0)
+        expect_gt(nrow(Calibration_RF_QC()$homologue_qc), 0)
+        expect_true(!is.null(output$CalibrationIncluded))
+        expect_true(!is.null(output$CalibrationRemoved))
+        expect_true(!is.null(output$table_cal_rf_batch_qc))
+        expect_true(!is.null(output$table_cal_rf_homologue_qc))
+    })
+})

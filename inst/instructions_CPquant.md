@@ -62,6 +62,7 @@ __Calculate MDL?__: If "Yes", then calculates the method detection limits based 
 If no blank subtraction then MDL = avg + 3 * standard deviation of blank samples.  
 If blank subtraction then MDL = 3 * standard deviation of blank samples.  
 __Types of standards__: Currently only have option to use mixtures and single chain standards to perform deconvolution. More option can be added later for other quantification strategies.  
+__Calibration curve source__: Choose between building calibration curves __From Skyline file__ (using the `Standard` samples inside the imported Skyline Excel file) or __Upload saved calibration (.xlsx)__ to quantify using a previously saved CPquant calibration workbook. When __Upload saved calibration (.xlsx)__ is selected, use __Import saved calibration (.xlsx)__ to upload the calibration file before pressing __Proceed__.  
   
   
 __Remove samples from quantification?__: select samples to be removed before quantification process.  
@@ -82,7 +83,7 @@ If the R-squared of the goodness of calibration fit for a homologue group for a 
 ## Input summary    
 ### Choose tab  
 The display might take some time before results show up here so be patient.  
-__Included Standards__: A table showing standards and homologue groups that are included in the quantification. Only those with a positive RF and rsquared above the initial cutoff will be included.  
+__Included Standards__: A table showing standards and homologue groups that are included in the quantification. Only those with a positive RF and rsquared above the initial cutoff will be included. Use the __Save Calibration Curve (.xlsx)__ button above this table to export the calibration curve for future analyses in a fixed 3-sheet `.xlsx` format (`Calibration` parameters, `Standards_Data` with raw `Standard` rows including `IS` and `RS`, and `Metadata` settings).  
 __Removed from Calibration__: A table showing individual homologue groups from specific standards that are removed from the quantification process, due to negative RF or calibration curve R2 values below limit.   
 __Quan to Qual ratio__: Violin plots showing the ratio Quan/Qual area to detect outliers and thus help in assessing quality of data.  
 __Measured vs Theor Quan/Qual ratio__: Plot showing the measured Quan/Qual ratio divided by the theoretical Quan/Qual ratio. Ideally, the ratio should be around 1. Outlier ratios (<0.3 or >3) are marked in red.  
@@ -109,6 +110,8 @@ __ISSUE__: CURRENTLY THE COLORS OF THE CARBON CHAIN GROUPS DOES NOT MATCH BETWEE
 
 ## QA/QC  
 Various QA/QC results will show depending on the choices in the input tab. These include recovery and MDL calculations.  
+
+__Calibration RF Check__: When quantifying with a previously saved calibration curve (__Upload saved calibration (.xlsx)__), include one or more verification standards in the new Skyline run with the same `Batch Name` and `Analyte Concentration` > 0 (`Sample Type` = `Standard`). CPquant calculates the current response factor (`Area / Analyte Concentration`) for each check standard and compares both the batch-level total response factor (`Sum_RF_saved` vs. `Sum_RF_current`) and individual homologue response factors (`RF_saved` vs. `RF_current`), flagging differences within +/-20% as _Pass_, 20-30% as _Review_, and >30% as _Fail_.  
 
 The isotope-pattern QC views compare normalized observed Skyline peak areas with the theoretical relative abundances exported by CPions in the `Transition Note` column. The summary table reports the number of observed and expected ions, total area, cosine similarity, Pearson correlation, weighted absolute percent error, maximum ion ratio error, and a QC flag. A cosine similarity of 1 means the measured isotope pattern matches the theoretical pattern exactly after normalization. By default, cosine similarity >=0.95 is flagged as _Pass_, 0.85-0.95 as _Review_, and <0.85 as _Fail_.  
 

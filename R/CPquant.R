@@ -64,6 +64,17 @@ CPquant <- function(...){
                                             label = "Types of standards",
                                             choices = c("Group Mixtures"),
                                             selected = "Group Mixtures"),
+                        shiny::radioButtons("calibrationSource",
+                                            label = "Calibration curve source",
+                                            choices = c("From Skyline file",
+                                                        "Upload saved calibration (.xlsx)"),
+                                            selected = "From Skyline file"),
+                        shiny::conditionalPanel(
+                            condition = "input.calibrationSource == 'Upload saved calibration (.xlsx)'",
+                            shiny::fileInput("calibrationFile",
+                                             "Import saved calibration (.xlsx)",
+                                             accept = c("xlsx", ".xlsx"))
+                        ),
                         shiny::tags$div(
                             title = "Wait until import file is fully loaded before pressing!",
                             shiny::actionButton('go', 'Proceed', width = "100%")
@@ -97,6 +108,8 @@ CPquant <- function(...){
                 shiny::conditionalPanel(
                     condition = "input.navSummary == 'Included Standards'",
                     shiny::tags$h3("Standards included in calibration curves"),
+                    shiny::downloadButton("downloadCalibration", "Save Calibration Curve (.xlsx)"),
+                    shiny::tags$br(), shiny::tags$br(),
                     DT::DTOutput("CalibrationIncluded")
                 ),
                 shiny::conditionalPanel(
@@ -181,6 +194,7 @@ CPquant <- function(...){
                         "Choose tab:",
                         choices = c(
                             "Recovery and MDL",
+                            "Calibration RF Check",
                             "Isotope Similarity Heatmap",
                             "Isotope QC Summary",
                             "Isotope Pattern Overlay"
@@ -201,6 +215,15 @@ CPquant <- function(...){
                         DT::DTOutput("table_recovery"),
                         shiny::br(),
                         DT::DTOutput("table_MDL")
+                    ),
+                    shiny::conditionalPanel(
+                        condition = "input.navQAQC == 'Calibration RF Check'",
+                        shiny::uiOutput("calibrationRFCheckStatus"),
+                        shiny::tags$h4("Batch-level Response Factor Comparison (Sum RF)"),
+                        DT::DTOutput("table_cal_rf_batch_qc"),
+                        shiny::br(),
+                        shiny::tags$h4("Homologue-level Response Factor Comparison"),
+                        DT::DTOutput("table_cal_rf_homologue_qc")
                     ),
                     shiny::conditionalPanel(
                         condition = "input.navQAQC == 'Isotope QC Summary'",
@@ -254,9 +277,11 @@ CPquant <- function(...){
         # In-memory console sink setup
         # ---------------
         log_buf <- character()
-        tc <- textConnection("log_buf", open = "w", local = TRUE)
-        sink(tc, append = TRUE)                     # stdout
-        sink(tc, append = TRUE, type = "message")   # stderr (conditions)
+        if (!inherits(session, "MockShinySession")) {
+            tc <- textConnection("log_buf", open = "w", local = TRUE)
+            sink(tc, append = TRUE)                     # stdout
+            sink(tc, append = TRUE, type = "message")   # stderr (conditions)
+        }
         max_lines <- 600
         output$console_log <- shiny::renderText({
             shiny::invalidateLater(500, session)
@@ -312,57 +337,15 @@ CPquant <- function(...){
 
             progress$set(value = 0.5, detail = "Applying quantification settings")
 
-            # Sum all area of ions belong to same molecule if requested
-            if (identical(input$quanSum, "Sum Quan+Qual")) {
-                df <- df |>
-                    dplyr::group_by(Replicate_Name, Molecule_List, Molecule) |>
-                    dplyr::mutate(Area = sum(Area)) |>
-                    dplyr::ungroup()
-            }
-
-            # RS normalization
-            if (identical(input$correctWithRS, "Yes") && any(df$Molecule_List == "RS")) {
-                if (!is.null(input$chooseRS) && nzchar(input$chooseRS)) {
-                    df <- df |>
-                        dplyr::group_by(Replicate_Name) |>
-                        dplyr::mutate(
-                            .rs_val = dplyr::first(Area[Molecule == input$chooseRS &
-                                                            Molecule_List == "RS" &
-                                                            Isotope_Label_Type == "Quan"]),
-                            Area = dplyr::if_else(!is.na(.rs_val) & .rs_val > 0, Area / .rs_val, NA_real_)
-                        ) |>
-                        dplyr::ungroup() |>
-                        dplyr::select(-.rs_val)
-                }
-            }
-
-            # Blank subtraction — recompute after removal + RS correction
-            if (identical(input$blankSubtraction, "Yes, by avg area of blanks")) {
-                df_blank <- df |>
-                    dplyr::filter(Sample_Type == "Blank") |>
-                    dplyr::group_by(Molecule, Molecule_List, Isotope_Label_Type) |>
-                    dplyr::summarise(AverageBlank = mean(Area, na.rm = TRUE), .groups = "drop") |>
-                    dplyr::filter(!Molecule_List %in% c("IS", "RS", "VS"))
-
-                df <- df |>
-                    dplyr::left_join(df_blank,
-                                     by = c("Molecule", "Molecule_List", "Isotope_Label_Type")) |>
-                    dplyr::mutate(AverageBlank = tidyr::replace_na(AverageBlank, 0)) |>
-                    dplyr::mutate(
-                        Area = dplyr::case_when(
-                            Sample_Type == "Unknown" ~ Area - AverageBlank,
-                            TRUE ~ Area
-                        ),
-                        Area = ifelse(Area < 0, 0, Area)
-                    )
-            }
-
-            if (identical(input$standardTypes, "Group Mixtures")) {
-                df <- df |>
-                    dplyr::mutate(
-                        Quantification_Group = stringr::str_extract(Batch_Name, "^[^_]+")
-                    )
-            }
+            df <- apply_cpquant_preprocessing(
+                df,
+                remove_samples = input$removeSamples,
+                quan_sum = input$quanSum,
+                correct_with_rs = input$correctWithRS,
+                choose_rs = input$chooseRS,
+                blank_subtraction = input$blankSubtraction,
+                standard_types = input$standardTypes
+            )
 
             progress$set(value = 1, detail = "Complete")
             print("Upload successful!")
@@ -373,6 +356,7 @@ CPquant <- function(...){
         removeRsquared <- shiny::eventReactive(input$go, { as.numeric(input$removeRsquared) })
         Samples_Concentration <- reactiveVal() # store deconvolution for other tabs
         Isotope_QC <- reactiveVal(NULL)
+        Calibration_RF_QC <- reactiveVal(NULL)
 
         # ---- Raw table & plot (reflect auto removal) ----
         output$table_Skyline_output <- DT::renderDT({
@@ -404,36 +388,98 @@ CPquant <- function(...){
             progress$set(value = 0.2, detail = "Preparing standards data")
 
             if (input$standardTypes == "Group Mixtures") {
-                # All Molecule that does not meet RF, cal_rsquared criteria will be mutated to RF=0 (not included into calibration)
-                CPs_standards <- Skyline_output_filt |>
-                    dplyr::filter(Sample_Type == "Standard",
-                                  !Molecule_List %in% c("IS", "RS"),
-                                  Isotope_Label_Type == "Quan",
-                                  Batch_Name != "NA") |>
-                    dplyr::mutate(
-                        C_range = stringr::str_extract_all(Quantification_Group, "\\d+"),
-                        C_min = as.numeric(purrr::map_chr(C_range, ~ .x[1])),
-                        C_max = as.numeric(purrr::map_chr(C_range, function(x) { if (length(x) > 1) { x[2] } else { x[1] } }))
-                    ) |>
-                    dplyr::select(-C_range) |>
-                    dplyr::group_by(Batch_Name, Sample_Type, Molecule, Molecule_List, C_number, Cl_number, PCA, Quantification_Group, C_min, C_max) |>
-                    tidyr::nest() |>
-                    dplyr::filter(C_number >= C_min & C_number <= C_max) |>
-                    dplyr::mutate(models = purrr::map(data, ~ lm(Area ~ Analyte_Concentration, data = .x))) |>
-                    dplyr::mutate(coef = purrr::map(models, coef)) |>
-                    dplyr::mutate(RF = purrr::map_dbl(models, ~ coef(.x)["Analyte_Concentration"])) |>
-                    dplyr::mutate(intercept = purrr::map(coef, purrr::pluck("(Intercept)"))) |>
-                    dplyr::mutate(cal_rsquared = purrr::map(models, summary)) |>
-                    dplyr::mutate(cal_rsquared = purrr::map(cal_rsquared, purrr::pluck("r.squared"))) |>
-                    dplyr::select(-coef) |>
-                    tidyr::unnest(c(RF, intercept, cal_rsquared)) |>
-                    dplyr::mutate(RF = if_else(RF < 0, 0, RF)) |>
-                    dplyr::mutate(cal_rsquared = ifelse(is.nan(cal_rsquared) | is.na(cal_rsquared), 0, cal_rsquared)) |>
-                    dplyr::mutate(RF = if_else(cal_rsquared < removeRsquared(), 0, RF)) |>
-                    dplyr::ungroup() |>
-                    dplyr::group_by(Batch_Name) |>
-                    dplyr::mutate(Sum_RF_group = sum(RF, na.rm = TRUE)) |>
-                    dplyr::ungroup()
+                using_saved_cal <- identical(input$calibrationSource, "Upload saved calibration (.xlsx)")
+
+                if (using_saved_cal) {
+                    if (is.null(input$calibrationFile) || is.null(input$calibrationFile$datapath)) {
+                        showModal(
+                            modalDialog(
+                                title = "Missing saved calibration file",
+                                "Please upload a saved calibration (.xlsx) file or switch 'Calibration curve source' to 'From Skyline file'.",
+                                easyClose = TRUE,
+                                footer = modalButton("OK")
+                            )
+                        )
+                        return()
+                    }
+
+                    loaded_cal <- tryCatch({
+                        read_cpquant_calibration_xlsx(
+                            path = input$calibrationFile$datapath,
+                            min_rsquared = removeRsquared(),
+                            quan_sum = input$quanSum,
+                            correct_with_rs = input$correctWithRS,
+                            choose_rs = input$chooseRS,
+                            standard_types = input$standardTypes
+                        )
+                    }, error = function(e) {
+                        showModal(
+                            modalDialog(
+                                title = "Error loading saved calibration file",
+                                tagList(
+                                    p("Could not load the uploaded calibration (.xlsx) file."),
+                                    p("Details:"),
+                                    tags$pre(conditionMessage(e))
+                                ),
+                                easyClose = TRUE,
+                                footer = modalButton("OK")
+                            )
+                        )
+                        NULL
+                    })
+
+                    if (is.null(loaded_cal)) {
+                        return()
+                    }
+
+                    CPs_standards <- loaded_cal$standards
+                    raw_standards_for_export <- if (nrow(loaded_cal$raw_standards) > 0) {
+                        loaded_cal$raw_standards
+                    } else {
+                        base_df() |>
+                            dplyr::filter(
+                                Sample_Type == "Standard",
+                                !Replicate_Name %in% input$removeSamples
+                            )
+                    }
+                } else {
+                    # All Molecule that does not meet RF, cal_rsquared criteria will be mutated to RF=0 (not included into calibration)
+                    CPs_standards <- prepare_cpquant_standards(
+                        Skyline_output_filt,
+                        min_rsquared = removeRsquared()
+                    )
+                    raw_standards_for_export <- base_df() |>
+                        dplyr::filter(
+                            Sample_Type == "Standard",
+                            !Replicate_Name %in% input$removeSamples
+                        )
+                }
+
+                cal_rf_qc <- compare_calibration_rf_qc(CPs_standards, Skyline_output_filt)
+                Calibration_RF_QC(cal_rf_qc)
+
+                output$downloadCalibration <- shiny::downloadHandler(
+                    filename = function() {
+                        paste("CPquant_Calibration_", Sys.Date(), ".xlsx", sep = "")
+                    },
+                    content = function(file) {
+                        write_cpquant_calibration_xlsx(
+                            path = file,
+                            standards_tbl = CPs_standards,
+                            raw_standards_df = raw_standards_for_export,
+                            metadata = list(
+                                created_date = as.character(Sys.Date()),
+                                standardTypes = input$standardTypes,
+                                quanSum = input$quanSum,
+                                blankSubtraction = input$blankSubtraction,
+                                correctWithRS = input$correctWithRS,
+                                chooseRS = if (identical(input$correctWithRS, "Yes") && !is.null(input$chooseRS)) input$chooseRS else "",
+                                removeRsquared = removeRsquared(),
+                                quanUnit = quantUnit()
+                            )
+                        )
+                    }
+                )
 
                 progress$set(value = 0.6, detail = "Preparing sample data")
 
@@ -486,15 +532,110 @@ CPquant <- function(...){
 
 
                 output$CalibrationRemoved <- DT::renderDT({
+                    req(CPs_standards)
                     CPs_standards |>
+                        dplyr::ungroup() |>
                         dplyr::filter(RF <= 0) |>
-                        dplyr::mutate(coef = purrr::map(models, coef)) |>
-                        dplyr::mutate(RF = purrr::map_dbl(models, ~ coef(.x)["Analyte_Concentration"])) |>
-                        dplyr::mutate(intercept = purrr::map(coef, purrr::pluck("(Intercept)"))) |>
-                        dplyr::select(Batch_Name, Molecule, Quantification_Group, RF, intercept, cal_rsquared) |>
-                        tidyr::unnest(c(RF, intercept)) |>
+                        dplyr::mutate(RF_display = if ("RF_raw" %in% names(CPs_standards)) as.numeric(RF_raw) else as.numeric(RF)) |>
+                        dplyr::select(Batch_Name, Molecule, Quantification_Group, RF = RF_display, intercept, cal_rsquared) |>
                         dplyr::mutate(across(where(is.numeric), ~ signif(.x, digits = 4))) |>
                         DT::datatable(options = list(pageLength = 40))
+                })
+
+                ###### Calibration RF Check QA/QC outputs ######
+                output$calibrationRFCheckStatus <- shiny::renderUI({
+                    qc <- Calibration_RF_QC()
+                    if (!using_saved_cal) {
+                        shiny::tags$div(
+                            style = "padding: 10px 14px; margin-bottom: 12px; background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px;",
+                            shiny::tags$strong("Note: "),
+                            "Calibration curves were built from the current Skyline file. When 'Upload saved calibration (.xlsx)' is selected and the Skyline file includes verification standards with matching Batch Name, this section compares saved vs. current Response Factors (RF = Area / Concentration; Pass <= 20%, Review <= 30%, Fail > 30%)."
+                        )
+                    } else if (is.null(qc) || nrow(qc$batch_qc) == 0) {
+                        shiny::tags$div(
+                            style = "padding: 10px 14px; margin-bottom: 12px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;",
+                            shiny::tags$strong("No matching check standards found: "),
+                            "Using saved calibration file (",
+                            shiny::tags$code(input$calibrationFile$name),
+                            "), but the current Skyline file does not contain any Sample_Type == 'Standard' rows with a matching Batch Name and Analyte Concentration > 0."
+                        )
+                    } else {
+                        shiny::tags$div(
+                            style = "padding: 10px 14px; margin-bottom: 12px; background-color: #d1e7dd; border-left: 4px solid #198754; border-radius: 4px;",
+                            shiny::tags$strong("Saved Calibration QA/QC: "),
+                            "Comparing saved calibration (",
+                            shiny::tags$code(input$calibrationFile$name),
+                            ") against verification standards in the current Skyline run (RF = Area / Concentration; Pass: |% diff| <= 20%, Review: <= 30%, Fail: > 30%)."
+                        )
+                    }
+                })
+
+                output$table_cal_rf_batch_qc <- DT::renderDT({
+                    shiny::req(Calibration_RF_QC())
+                    Calibration_RF_QC()$batch_qc |>
+                        dplyr::mutate(
+                            Sum_RF_saved = signif(Sum_RF_saved, 5),
+                            Sum_RF_current = signif(Sum_RF_current, 5),
+                            RF_ratio = round(RF_ratio, 3),
+                            pct_diff = round(pct_diff, 1)
+                        ) |>
+                        DT::datatable(
+                            filter = "top",
+                            extensions = c("Buttons", "Scroller"),
+                            options = list(
+                                scrollY = 300, scrollX = 500, deferRender = TRUE, scroller = TRUE,
+                                buttons = list(
+                                    list(extend = "excel", filename = "Calibration_RF_Batch_QC", title = NULL,
+                                         exportOptions = list(modifier = list(page = "all"))),
+                                    list(extend = "csv", filename = "Calibration_RF_Batch_QC", title = NULL,
+                                         exportOptions = list(modifier = list(page = "all")))
+                                ),
+                                dom = "lBfrtip"
+                            ),
+                            rownames = FALSE
+                        ) |>
+                        DT::formatStyle(
+                            "qc_flag",
+                            backgroundColor = DT::styleEqual(
+                                c("Pass", "Review", "Fail", "No signal"),
+                                c("#d1e7dd", "#fff3cd", "#f8d7da", "#e2e3e5")
+                            ),
+                            fontWeight = "600"
+                        )
+                })
+
+                output$table_cal_rf_homologue_qc <- DT::renderDT({
+                    shiny::req(Calibration_RF_QC())
+                    Calibration_RF_QC()$homologue_qc |>
+                        dplyr::mutate(
+                            RF_saved = signif(RF_saved, 5),
+                            RF_current = signif(RF_current, 5),
+                            RF_ratio = round(RF_ratio, 3),
+                            pct_diff = round(pct_diff, 1)
+                        ) |>
+                        DT::datatable(
+                            filter = "top",
+                            extensions = c("Buttons", "Scroller"),
+                            options = list(
+                                scrollY = 500, scrollX = 500, deferRender = TRUE, scroller = TRUE,
+                                buttons = list(
+                                    list(extend = "excel", filename = "Calibration_RF_Homologue_QC", title = NULL,
+                                         exportOptions = list(modifier = list(page = "all"))),
+                                    list(extend = "csv", filename = "Calibration_RF_Homologue_QC", title = NULL,
+                                         exportOptions = list(modifier = list(page = "all")))
+                                ),
+                                dom = "lBfrtip"
+                            ),
+                            rownames = FALSE
+                        ) |>
+                        DT::formatStyle(
+                            "qc_flag",
+                            backgroundColor = DT::styleEqual(
+                                c("Pass", "Review", "Fail", "No signal"),
+                                c("#d1e7dd", "#fff3cd", "#f8d7da", "#e2e3e5")
+                            ),
+                            fontWeight = "600"
+                        )
                 })
 
                 ###### Plots: Quan/Qual ratios ######
@@ -600,6 +741,19 @@ CPquant <- function(...){
                 combined_standard <- CPs_standards_input |>
                     tibble::column_to_rownames(var = "Molecule") |>
                     as.matrix()
+
+                std_molecules <- rownames(combined_standard)
+                combined_sample <- combined_sample |>
+                    dplyr::mutate(
+                        data = purrr::map(data, function(sample_df) {
+                            if (nrow(sample_df) == length(std_molecules) &&
+                                setequal(sample_df$Molecule, std_molecules)) {
+                                sample_df[match(std_molecules, sample_df$Molecule), , drop = FALSE]
+                            } else {
+                                sample_df
+                            }
+                        })
+                    )
 
                 # ---- DECONVOLUTION with UI error popup ----
                 deconvolution <- tryCatch({
@@ -964,7 +1118,7 @@ CPquant <- function(...){
         })
 
         # ---- Close the app when the session ends (non-interactive) ----
-        if (!interactive()) {
+        if (!interactive() && !inherits(session, "MockShinySession")) {
             session$onSessionEnded(function() {
                 stopApp()
                 q("no")
